@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Private Cloud</title>
+<style>
+body{font-family:system-ui;background:#0f172a;color:#e5e7eb;display:flex;justify-content:center;align-items:center;height:100vh}
+.card{background:#020617;padding:30px;border-radius:14px;width:520px}
+input,button{width:100%;margin:6px 0;padding:10px;border-radius:8px;border:0}
+button{background:#38bdf8;color:#020617;font-weight:600;cursor:pointer}
+pre{background:#020617;padding:10px;border-radius:8px;max-height:200px;overflow:auto}
+.file{display:flex;justify-content:space-between;margin:4px 0}
+small{color:#94a3b8}
+</style>
+</head>
+<body>
+<div class="card">
+<h2>My Private Cloud</h2>
+<small id="backend"></small>
+<input type="password" id="pw" placeholder="Password">
+<input type="file" id="file">
+<button onclick="upload()">Upload</button>
+<button onclick="listFiles()">List Files</button>
+<div id="files"></div>
+<pre id="log"></pre>
+</div>
+
+<script>
+const BACKEND_URL = "https://efficiently-nature-due-awesome.trycloudflare.com"
+document.getElementById("backend").textContent = "Backend: " + BACKEND_URL
+
+function log(t){document.getElementById("log").textContent+=t+"\n"}
+function headers(){return {"x-password":document.getElementById("pw").value}}
+
+function upload(){
+  const f=document.getElementById("file").files[0]
+  if(!f)return
+  const fd=new FormData()
+  fd.append("file",f)
+  fetch(BACKEND_URL+"/upload",{method:"POST",headers:headers(),body:fd})
+    .then(r=>r.json())
+    .then(d=>log("UPLOADED "+d.name+" ("+d.size+" bytes)"))
+}
+
+function listFiles(){
+  fetch(BACKEND_URL+"/files",{headers:headers()})
+    .then(r=>r.json())
+    .then(files=>{
+      const c=document.getElementById("files")
+      c.innerHTML=""
+      files.forEach(f=>{
+        const a=document.createElement("a")
+        a.textContent=f.name+" ("+f.size+"b)"
+        a.href="#"
+        a.onclick=e=>{
+          e.preventDefault()
+          fetch(BACKEND_URL+"/download/"+encodeURIComponent(f.name),{headers:headers()})
+            .then(r=>r.blob())
+            .then(b=>{
+              const u=URL.createObjectURL(b)
+              const d=document.createElement("a")
+              d.href=u
+              d.download=f.name
+              d.click()
+              URL.revokeObjectURL(u)
+            })
+        }
+        const div=document.createElement("div")
+        div.className="file"
+        div.appendChild(a)
+        c.appendChild(div)
+      })
+      log("FILES LISTED")
+    })
+}
+</script>
+</body>
+</html>
