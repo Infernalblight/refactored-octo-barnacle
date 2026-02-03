@@ -15,49 +15,27 @@
   --danger:#ef4444;
 }
 *{box-sizing:border-box}
-body{
-  margin:0;
-  font-family:system-ui,Segoe UI,Roboto;
-  background:var(--bg);
-  color:var(--text)
-}
+body{margin:0;font-family:system-ui;background:var(--bg);color:var(--text)}
 .app{display:flex;height:100vh}
-.sidebar{
-  width:320px;
-  background:var(--panel);
-  border-right:1px solid var(--border);
-  padding:6px;
-  overflow:auto
-}
+.sidebar{width:320px;background:var(--panel);border-right:1px solid var(--border);padding:6px;overflow:auto}
 .main{flex:1;padding:10px}
 .toolbar{display:flex;gap:8px;margin-bottom:8px}
-input,button{
+button,input{
   background:var(--panel);
   border:1px solid var(--border);
   color:var(--text);
   padding:6px 12px;
-  border-radius:8px
+  border-radius:8px;
+  cursor:pointer
 }
 button:hover{background:var(--hover)}
 .path{font-size:13px;color:var(--muted);margin-bottom:6px}
 
-.row{
-  display:flex;
-  align-items:center;
-  gap:6px;
-  padding:3px 6px;
-  border-radius:6px;
-  cursor:pointer
-}
+.row{display:flex;align-items:center;gap:6px;padding:3px 6px;border-radius:6px;cursor:pointer}
 .row:hover{background:var(--hover)}
 .arrow{width:14px;color:var(--muted)}
 .dir{color:var(--accent);font-weight:600}
-.file{color:var(--text)}
-.del{
-  margin-left:auto;
-  color:var(--danger);
-  cursor:pointer
-}
+.del{margin-left:auto;color:var(--danger)}
 .hidden{display:none}
 </style>
 </head>
@@ -67,87 +45,53 @@ button:hover{background:var(--hover)}
   <div class="sidebar" id="tree"></div>
   <div class="main">
     <div class="path" id="cwd">/</div>
-
     <div class="toolbar">
-      <button onclick="pickFiles()">Upload Files</button>
       <button onclick="pickFolder()">Upload Folder</button>
       <button onclick="goRoot()">Root</button>
     </div>
-
-    <input id="filePicker" class="hidden" type="file" multiple accept="*/*">
     <input id="folderPicker" class="hidden" type="file" webkitdirectory>
   </div>
 </div>
 
 <script>
-const BACKEND = "https://created-pierce-eventually-src.trycloudflare.com"
+const BACKEND = "https://generates-amp-lyrics-branches.trycloudflare.com"
 
 const tree = document.getElementById("tree")
 const cwdEl = document.getElementById("cwd")
-const filePicker = document.getElementById("filePicker")
 const folderPicker = document.getElementById("folderPicker")
 
 let cwd=""
 const openDirs=new Set()
+const CHUNK=10*1024*1024
 
-const CHUNK_SIZE = 10 * 1024 * 1024
-
-function goRoot(){
-  cwd=""
-  load()
-  updatePath()
-}
-
-function updatePath(){
-  cwdEl.textContent="/"+(cwd||"")
-}
-
-
-function pickFiles(){
-  filePicker.value=""
-  filePicker.click()
-}
+function goRoot(){cwd="";load();updatePath()}
+function updatePath(){cwdEl.textContent="/"+(cwd||"")}
 
 function pickFolder(){
   folderPicker.value=""
   folderPicker.click()
 }
 
-filePicker.onchange = () => uploadFiles(filePicker.files, false)
-folderPicker.onchange = () => uploadFiles(folderPicker.files, true)
+folderPicker.onchange=()=>uploadFolder(folderPicker.files)
 
-
-async function uploadFiles(files, isFolder){
+async function uploadFolder(files){
   if(!files.length) return
+  const top = files[0].webkitRelativePath.split("/")[0]
 
-  for(const file of files){
-    const rel = isFolder && file.webkitRelativePath
-      ? file.webkitRelativePath.split("/").slice(1).join("/")
-      : file.name
-
-    const base = cwd
-    const total = Math.ceil(file.size / CHUNK_SIZE)
+  for(const f of files){
+    const rel = f.webkitRelativePath.split("/").slice(1).join("/")
+    const total = Math.ceil(f.size / CHUNK)
 
     for(let i=0;i<total;i++){
-      const chunk = file.slice(
-        i * CHUNK_SIZE,
-        Math.min((i + 1) * CHUNK_SIZE, file.size)
-      )
-
+      const chunk = f.slice(i*CHUNK, Math.min((i+1)*CHUNK, f.size))
       await fetch(
-        `${BACKEND}/upload-chunk` +
-        `?name=${encodeURIComponent(file.name)}` +
-        `&chunkIndex=${i}` +
-        `&totalChunks=${total}` +
-        `&path=${encodeURIComponent(base)}`,
+        `${BACKEND}/upload-chunk?folder=${encodeURIComponent(top)}&file=${encodeURIComponent(rel)}&chunkIndex=${i}&totalChunks=${total}`,
         { method:"POST", body:chunk }
       )
     }
   }
-
   load()
 }
-
 
 function render(nodes,el,depth=0){
   nodes.forEach(n=>{
@@ -164,21 +108,11 @@ function render(nodes,el,depth=0){
       del.onclick=e=>{e.stopPropagation();remove(n.path)}
       row.appendChild(del)
 
-      row.onclick=()=>{
-        open?openDirs.delete(n.path):openDirs.add(n.path)
-        load()
-      }
+      row.ondblclick=()=>window.open(`${BACKEND}/download-folder?path=${encodeURIComponent(n.path)}`)
+      row.onclick=()=>{open?openDirs.delete(n.path):openDirs.add(n.path);load()}
+
       el.appendChild(row)
       if(open) render(n.children,el,depth+1)
-    }else{
-      row.innerHTML=`<div class="arrow"></div><div class="file">${n.name}</div>`
-      const del=document.createElement("div")
-      del.className="del"
-      del.textContent="×"
-      del.onclick=e=>{e.stopPropagation();remove(n.path)}
-      row.appendChild(del)
-      row.onclick=()=>download(n.path,n.name)
-      el.appendChild(row)
     }
   })
 }
@@ -186,26 +120,11 @@ function render(nodes,el,depth=0){
 function load(){
   fetch(BACKEND+"/files")
     .then(r=>r.json())
-    .then(d=>{
-      tree.innerHTML=""
-      render(d,tree)
-    })
-}
-
-
-function download(p,n){
-  fetch(BACKEND+"/download?path="+encodeURIComponent(p))
-    .then(r=>r.blob())
-    .then(b=>{
-      const u=URL.createObjectURL(b)
-      const a=document.createElement("a")
-      a.href=u;a.download=n;a.click()
-      URL.revokeObjectURL(u)
-    })
+    .then(d=>{tree.innerHTML="";render(d,tree)})
 }
 
 function remove(p){
-  if(!confirm("Delete "+p+" ?")) return
+  if(!confirm("Delete folder "+p+" ?")) return
   fetch(BACKEND+"/delete",{
     method:"POST",
     headers:{ "Content-Type":"application/json" },
