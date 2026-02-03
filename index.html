@@ -6,81 +6,80 @@
 <style>
 body{margin:0;font-family:system-ui;background:#0b0f19;color:#e5e7eb}
 .app{display:flex;height:100vh}
-.sidebar{width:260px;background:#020617;padding:10px;overflow:auto}
-.main{flex:1;padding:10px}
-.item{cursor:pointer;padding:4px 8px;border-radius:6px}
+.sidebar{width:260px;background:#020617;padding:8px;overflow:auto}
+.main{flex:1;padding:8px}
+.item{padding:4px 8px;border-radius:6px;cursor:pointer}
 .item:hover{background:#1e293b}
-.file{color:#e5e7eb}
 .dir{color:#38bdf8;font-weight:600}
-.top{display:flex;gap:8px;margin-bottom:10px}
-input,button{background:#020617;border:1px solid #1e293b;color:#e5e7eb;padding:8px;border-radius:8px}
+.file{color:#e5e7eb}
+.toolbar{display:flex;gap:8px;margin-bottom:8px}
+input,button{background:#020617;border:1px solid #1e293b;color:#e5e7eb;padding:6px 10px;border-radius:8px}
 </style>
 </head>
 <body>
 <div class="app">
   <div class="sidebar" id="tree"></div>
   <div class="main">
-    <div class="top">
+    <div class="toolbar">
       <input type="password" id="pw" placeholder="Password">
       <input type="file" id="file" webkitdirectory multiple>
       <button onclick="upload()">Upload</button>
     </div>
-    <div id="files"></div>
   </div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
 <script>
-const BACKEND = "https://advocate-extended-interracial-cornell.trycloudflare.com"
+const BACKEND="https://forbes-final-protecting-paris.trycloudflare.com"
+let cwd=""
 
-function headers(){
-  return { "x-password": document.getElementById("pw").value }
-}
+function h(){return{"x-password":pw.value,"x-path":cwd}}
 
-async function upload(){
-  const input = document.getElementById("file")
-  if (!input.files.length) return
-
-  const file = input.files[0]
-
-  if (file.type === "application/zip" || file.name.endsWith(".zip")) {
-    uploadFile(file)
-  } else {
-    alert("Only ZIP files or folders are allowed")
-  }
-}
-
-async function uploadFolder(files){
-  const zip = new JSZip()
-  for (const f of files) {
-    zip.file(f.webkitRelativePath || f.name, f)
-  }
-  const blob = await zip.generateAsync({ type: "blob" })
-  const zipped = new File([blob], "folder.zip", { type: "application/zip" })
-  uploadFile(zipped)
-}
-
-function uploadFile(file){
-  const fd = new FormData()
-  fd.append("file", file)
-
-  fetch(BACKEND + "/upload", {
-    method: "POST",
-    headers: headers(),
-    body: fd
+function render(nodes, el){
+  nodes.forEach(n=>{
+    const d=document.createElement("div")
+    d.className="item "+n.type
+    d.textContent=n.name
+    if(n.type==="dir"){
+      d.onclick=()=>{cwd=n.path;load()}
+      el.appendChild(d)
+      const sub=document.createElement("div")
+      sub.style.paddingLeft="12px"
+      el.appendChild(sub)
+      render(n.children,sub)
+    }else{
+      d.onclick=()=>{
+        fetch(BACKEND+"/download?path="+encodeURIComponent(n.path),{headers:h()})
+        .then(r=>r.blob()).then(b=>{
+          const u=URL.createObjectURL(b)
+          const a=document.createElement("a")
+          a.href=u;a.download=n.name;a.click()
+          URL.revokeObjectURL(u)
+        })
+      }
+      el.appendChild(d)
+    }
   })
-  .then(r => r.json())
-  .then(d => alert("Uploaded: " + d.uploaded))
 }
 
-function onPick(e){
-  const files = e.target.files
-  if (files.length > 1) {
-    uploadFolder(files)
-  } else {
-    upload()
-  }
+function load(){
+  fetch(BACKEND+"/files",{headers:h()})
+  .then(r=>r.json())
+  .then(d=>{
+    tree.innerHTML=""
+    render(d,tree)
+  })
 }
+
+function upload(){
+  const fd=new FormData()
+  for(const f of file.files){
+    fd.append("files",f,f.webkitRelativePath||f.name)
+  }
+  fetch(BACKEND+"/upload",{method:"POST",headers:h(),body:fd})
+  .then(()=>load())
+}
+
+load()
 </script>
 </body>
 </html>
