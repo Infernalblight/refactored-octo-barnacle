@@ -1,19 +1,55 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
 <meta charset="UTF-8">
 <title>My Cloud</title>
 <style>
-body{margin:0;font-family:system-ui;background:#0b0f19;color:#e5e7eb}
+*{box-sizing:border-box}
+body{
+  margin:0;
+  font-family:system-ui,Segoe UI,Roboto,Arial;
+  background:#0b0f19;
+  color:#e5e7eb
+}
 .app{display:flex;height:100vh}
-.sidebar{width:260px;background:#020617;padding:8px;overflow:auto}
-.main{flex:1;padding:8px}
-.item{padding:4px 8px;border-radius:6px;cursor:pointer}
+.sidebar{
+  width:280px;
+  background:#020617;
+  padding:8px;
+  overflow:auto;
+  border-right:1px solid #1e293b
+}
+.main{
+  flex:1;
+  padding:10px
+}
+.toolbar{
+  display:flex;
+  gap:8px;
+  margin-bottom:10px
+}
+.item{
+  padding:4px 8px;
+  border-radius:6px;
+  cursor:pointer;
+  user-select:none
+}
 .item:hover{background:#1e293b}
 .dir{color:#38bdf8;font-weight:600}
 .file{color:#e5e7eb}
-.toolbar{display:flex;gap:8px;margin-bottom:8px}
-input,button{background:#020617;border:1px solid #1e293b;color:#e5e7eb;padding:6px 10px;border-radius:8px}
+.path{
+  color:#94a3b8;
+  font-size:13px;
+  margin-bottom:6px
+}
+input,button{
+  background:#020617;
+  border:1px solid #1e293b;
+  color:#e5e7eb;
+  padding:6px 10px;
+  border-radius:8px
+}
+button{cursor:pointer}
 </style>
 </head>
 <body>
@@ -22,88 +58,109 @@ input,button{background:#020617;border:1px solid #1e293b;color:#e5e7eb;padding:6
   <div class="sidebar" id="tree"></div>
 
   <div class="main">
+    <div class="path" id="cwd">/</div>
     <div class="toolbar">
       <input type="file" id="picker" multiple webkitdirectory>
       <button onclick="upload()">Upload</button>
+      <button onclick="goRoot()">Root</button>
     </div>
   </div>
 </div>
 
 <script>
-const BACKEND = "https://feat-suggesting-forwarding-underlying.trycloudflare.com"
+const BACKEND = "https://emily-cologne-untitled-humanity.trycloudflare.com"
+
 let cwd = ""
 
-function render(nodes, el) {
-  nodes.forEach(n => {
-    const d = document.createElement("div")
-    d.className = "item " + n.type
-    d.textContent = n.name
+function goRoot(){
+  cwd=""
+  load()
+  updatePath()
+}
 
-    if (n.type === "dir") {
-      d.onclick = () => { cwd = n.path; load() }
+function updatePath(){
+  document.getElementById("cwd").textContent = "/" + (cwd || "")
+}
+
+function render(nodes, el){
+  nodes.forEach(n=>{
+    const d=document.createElement("div")
+    d.className="item "+n.type
+    d.textContent=n.name
+
+    if(n.type==="dir"){
+      d.onclick=()=>{
+        cwd = n.path
+        load()
+        updatePath()
+      }
       el.appendChild(d)
 
-      const sub = document.createElement("div")
-      sub.style.paddingLeft = "12px"
+      const sub=document.createElement("div")
+      sub.style.paddingLeft="14px"
       el.appendChild(sub)
-      render(n.children, sub)
-    } else {
-      d.onclick = () => download(n.path, n.name)
+      render(n.children,sub)
+    }else{
+      d.onclick=()=>download(n.path,n.name)
       el.appendChild(d)
     }
   })
 }
 
-function load() {
-  fetch(BACKEND + "/files")
-    .then(r => r.json())
-    .then(d => {
-      tree.innerHTML = ""
-      render(d, tree)
+function load(){
+  fetch(BACKEND+"/files")
+    .then(r=>r.json())
+    .then(data=>{
+      tree.innerHTML=""
+      render(data,tree)
     })
 }
 
-function download(path, name) {
-  fetch(BACKEND + "/download?path=" + encodeURIComponent(path))
-    .then(r => r.blob())
-    .then(b => {
-      const u = URL.createObjectURL(b)
-      const a = document.createElement("a")
-      a.href = u
-      a.download = name
+function download(path,name){
+  fetch(BACKEND+"/download?path="+encodeURIComponent(path))
+    .then(r=>r.blob())
+    .then(b=>{
+      const u=URL.createObjectURL(b)
+      const a=document.createElement("a")
+      a.href=u
+      a.download=name
       a.click()
       URL.revokeObjectURL(u)
     })
 }
 
-function upload() {
-  const files = picker.files
-  if (!files.length) return
+function upload(){
+  const files=picker.files
+  if(!files.length) return
 
-  const fd = new FormData()
-  let basePath = cwd
+  const fd=new FormData()
+  let base=cwd
 
-  if (files[0].webkitRelativePath) {
-    const top = files[0].webkitRelativePath.split("/")[0]
-    basePath = cwd ? cwd + "/" + top : top
+  if(files[0].webkitRelativePath){
+    const top=files[0].webkitRelativePath.split("/")[0]
+    base = base ? base+"/"+top : top
   }
 
-  for (const f of files) {
+  for(const f of files){
     const rel = f.webkitRelativePath
       ? f.webkitRelativePath.split("/").slice(1).join("/")
       : f.name
-
-    fd.append("files", f, rel)
+    fd.append("files",f,rel)
   }
 
-  fetch(BACKEND + "/upload", {
-    method: "POST",
-    headers: { "x-path": basePath },
-    body: fd
-  }).then(() => load())
+  fetch(BACKEND+"/upload",{
+    method:"POST",
+    headers:{ "x-path": base },
+    body:fd
+  }).then(()=>{
+    picker.value=""
+    load()
+  })
 }
 
 load()
+updatePath()
 </script>
+
 </body>
 </html>
