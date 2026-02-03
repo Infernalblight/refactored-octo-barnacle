@@ -17,66 +17,101 @@ input,button{background:#020617;border:1px solid #1e293b;color:#e5e7eb;padding:6
 </style>
 </head>
 <body>
+
 <div class="app">
   <div class="sidebar" id="tree"></div>
+
   <div class="main">
     <div class="toolbar">
       <input type="password" id="pw" placeholder="Password">
-      <input type="file" id="file" webkitdirectory multiple>
+      <input type="file" id="picker" multiple webkitdirectory>
       <button onclick="upload()">Upload</button>
     </div>
   </div>
 </div>
 
 <script>
-const BACKEND="https://forbes-final-protecting-paris.trycloudflare.com"
-let cwd=""
+const BACKEND = "https://forbes-final-protecting-paris.trycloudflare.com"
+let cwd = ""
 
-function h(){return{"x-password":pw.value,"x-path":cwd}}
+function headers(extra = {}) {
+  return {
+    "x-password": pw.value,
+    ...extra
+  }
+}
 
-function render(nodes, el){
-  nodes.forEach(n=>{
-    const d=document.createElement("div")
-    d.className="item "+n.type
-    d.textContent=n.name
-    if(n.type==="dir"){
-      d.onclick=()=>{cwd=n.path;load()}
+function render(nodes, el) {
+  nodes.forEach(n => {
+    const d = document.createElement("div")
+    d.className = "item " + n.type
+    d.textContent = n.name
+
+    if (n.type === "dir") {
+      d.onclick = () => { cwd = n.path; load() }
       el.appendChild(d)
-      const sub=document.createElement("div")
-      sub.style.paddingLeft="12px"
+
+      const sub = document.createElement("div")
+      sub.style.paddingLeft = "12px"
       el.appendChild(sub)
-      render(n.children,sub)
-    }else{
-      d.onclick=()=>{
-        fetch(BACKEND+"/download?path="+encodeURIComponent(n.path),{headers:h()})
-        .then(r=>r.blob()).then(b=>{
-          const u=URL.createObjectURL(b)
-          const a=document.createElement("a")
-          a.href=u;a.download=n.name;a.click()
-          URL.revokeObjectURL(u)
-        })
-      }
+      render(n.children, sub)
+    } else {
+      d.onclick = () => download(n.path, n.name)
       el.appendChild(d)
     }
   })
 }
 
-function load(){
-  fetch(BACKEND+"/files",{headers:h()})
-  .then(r=>r.json())
-  .then(d=>{
-    tree.innerHTML=""
-    render(d,tree)
+function load() {
+  fetch(BACKEND + "/files", { headers: headers() })
+    .then(r => r.json())
+    .then(d => {
+      tree.innerHTML = ""
+      render(d, tree)
+    })
+}
+
+function download(path, name) {
+  fetch(BACKEND + "/download?path=" + encodeURIComponent(path), {
+    headers: headers()
+  })
+  .then(r => r.blob())
+  .then(b => {
+    const u = URL.createObjectURL(b)
+    const a = document.createElement("a")
+    a.href = u
+    a.download = name
+    a.click()
+    URL.revokeObjectURL(u)
   })
 }
 
-function upload(){
-  const fd=new FormData()
-  for(const f of file.files){
-    fd.append("files",f,f.webkitRelativePath||f.name)
+function upload() {
+  const files = picker.files
+  if (!files.length) return
+
+  const fd = new FormData()
+
+  let basePath = cwd
+
+  if (files[0].webkitRelativePath) {
+    const topFolder = files[0].webkitRelativePath.split("/")[0]
+    basePath = cwd ? cwd + "/" + topFolder : topFolder
   }
-  fetch(BACKEND+"/upload",{method:"POST",headers:h(),body:fd})
-  .then(()=>load())
+
+  for (const f of files) {
+    const relative = f.webkitRelativePath
+      ? f.webkitRelativePath.split("/").slice(1).join("/")
+      : f.name
+
+    fd.append("files", f, relative)
+  }
+
+  fetch(BACKEND + "/upload", {
+    method: "POST",
+    headers: headers({ "x-path": basePath }),
+    body: fd
+  }).then(() => load())
 }
 
 load()
