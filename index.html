@@ -58,6 +58,7 @@ button:hover{background:var(--hover)}
   color:var(--danger);
   cursor:pointer
 }
+.hidden{display:none}
 </style>
 </head>
 <body>
@@ -66,11 +67,15 @@ button:hover{background:var(--hover)}
   <div class="sidebar" id="tree"></div>
   <div class="main">
     <div class="path" id="cwd">/</div>
+
     <div class="toolbar">
-      <input type="file" id="picker" multiple webkitdirectory accept="*/*">
-      <button onclick="upload()">Upload</button>
+      <button onclick="pickFiles()">Upload Files</button>
+      <button onclick="pickFolder()">Upload Folder</button>
       <button onclick="goRoot()">Root</button>
     </div>
+
+    <input id="filePicker" class="hidden" type="file" multiple accept="*/*">
+    <input id="folderPicker" class="hidden" type="file" webkitdirectory>
   </div>
 </div>
 
@@ -78,11 +83,14 @@ button:hover{background:var(--hover)}
 const BACKEND = "https://created-pierce-eventually-src.trycloudflare.com"
 
 const tree = document.getElementById("tree")
-const picker = document.getElementById("picker")
 const cwdEl = document.getElementById("cwd")
+const filePicker = document.getElementById("filePicker")
+const folderPicker = document.getElementById("folderPicker")
 
-let cwd = ""
-const openDirs = new Set()
+let cwd=""
+const openDirs=new Set()
+
+const CHUNK_SIZE = 10 * 1024 * 1024
 
 function goRoot(){
   cwd=""
@@ -91,10 +99,57 @@ function goRoot(){
 }
 
 function updatePath(){
-  cwdEl.textContent = "/" + (cwd || "")
+  cwdEl.textContent="/"+(cwd||"")
 }
 
-function render(nodes, el, depth=0){
+
+function pickFiles(){
+  filePicker.value=""
+  filePicker.click()
+}
+
+function pickFolder(){
+  folderPicker.value=""
+  folderPicker.click()
+}
+
+filePicker.onchange = () => uploadFiles(filePicker.files, false)
+folderPicker.onchange = () => uploadFiles(folderPicker.files, true)
+
+
+async function uploadFiles(files, isFolder){
+  if(!files.length) return
+
+  for(const file of files){
+    const rel = isFolder && file.webkitRelativePath
+      ? file.webkitRelativePath.split("/").slice(1).join("/")
+      : file.name
+
+    const base = cwd
+    const total = Math.ceil(file.size / CHUNK_SIZE)
+
+    for(let i=0;i<total;i++){
+      const chunk = file.slice(
+        i * CHUNK_SIZE,
+        Math.min((i + 1) * CHUNK_SIZE, file.size)
+      )
+
+      await fetch(
+        `${BACKEND}/upload-chunk` +
+        `?name=${encodeURIComponent(file.name)}` +
+        `&chunkIndex=${i}` +
+        `&totalChunks=${total}` +
+        `&path=${encodeURIComponent(base)}`,
+        { method:"POST", body:chunk }
+      )
+    }
+  }
+
+  load()
+}
+
+
+function render(nodes,el,depth=0){
   nodes.forEach(n=>{
     const row=document.createElement("div")
     row.className="row"
@@ -103,7 +158,6 @@ function render(nodes, el, depth=0){
     if(n.type==="dir"){
       const open=openDirs.has(n.path)
       row.innerHTML=`<div class="arrow">${open?"▼":"▶"}</div><div class="dir">${n.name}</div>`
-
       const del=document.createElement("div")
       del.className="del"
       del.textContent="×"
@@ -111,21 +165,18 @@ function render(nodes, el, depth=0){
       row.appendChild(del)
 
       row.onclick=()=>{
-        open ? openDirs.delete(n.path) : openDirs.add(n.path)
+        open?openDirs.delete(n.path):openDirs.add(n.path)
         load()
       }
-
       el.appendChild(row)
-      if(open) render(n.children, el, depth+1)
-    } else {
+      if(open) render(n.children,el,depth+1)
+    }else{
       row.innerHTML=`<div class="arrow"></div><div class="file">${n.name}</div>`
-
       const del=document.createElement("div")
       del.className="del"
       del.textContent="×"
       del.onclick=e=>{e.stopPropagation();remove(n.path)}
       row.appendChild(del)
-
       row.onclick=()=>download(n.path,n.name)
       el.appendChild(row)
     }
@@ -137,9 +188,10 @@ function load(){
     .then(r=>r.json())
     .then(d=>{
       tree.innerHTML=""
-      render(d, tree)
+      render(d,tree)
     })
 }
+
 
 function download(p,n){
   fetch(BACKEND+"/download?path="+encodeURIComponent(p))
@@ -147,34 +199,9 @@ function download(p,n){
     .then(b=>{
       const u=URL.createObjectURL(b)
       const a=document.createElement("a")
-      a.href=u
-      a.download=n
-      a.click()
+      a.href=u;a.download=n;a.click()
       URL.revokeObjectURL(u)
     })
-}
-
-async function upload(){
-  const files = picker.files
-  if(!files.length) return
-
-  const CHUNK = 10 * 1024 * 1024
-
-  for(const file of files){
-    const base = cwd
-    const total = Math.ceil(file.size / CHUNK)
-
-    for(let i=0;i<total;i++){
-      const chunk=file.slice(i*CHUNK, Math.min((i+1)*CHUNK, file.size))
-      await fetch(
-        `${BACKEND}/upload-chunk?name=${encodeURIComponent(file.name)}&chunkIndex=${i}&totalChunks=${total}&path=${encodeURIComponent(base)}`,
-        { method:"POST", body:chunk }
-      )
-    }
-  }
-
-  picker.value=""
-  load()
 }
 
 function remove(p){
