@@ -76,11 +76,23 @@ button:hover{background:var(--hover)}
 
 <script>
 const BACKEND = "https://created-pierce-eventually-src.trycloudflare.com"
+
+const tree = document.getElementById("tree")
+const picker = document.getElementById("picker")
+const cwdEl = document.getElementById("cwd")
+
 let cwd = ""
 const openDirs = new Set()
 
-function goRoot(){ cwd=""; load(); updatePath() }
-function updatePath(){ cwdEl.textContent="/"+(cwd||"") }
+function goRoot(){
+  cwd=""
+  load()
+  updatePath()
+}
+
+function updatePath(){
+  cwdEl.textContent = "/" + (cwd || "")
+}
 
 function render(nodes, el, depth=0){
   nodes.forEach(n=>{
@@ -91,6 +103,7 @@ function render(nodes, el, depth=0){
     if(n.type==="dir"){
       const open=openDirs.has(n.path)
       row.innerHTML=`<div class="arrow">${open?"▼":"▶"}</div><div class="dir">${n.name}</div>`
+
       const del=document.createElement("div")
       del.className="del"
       del.textContent="×"
@@ -98,13 +111,15 @@ function render(nodes, el, depth=0){
       row.appendChild(del)
 
       row.onclick=()=>{
-        open?openDirs.delete(n.path):openDirs.add(n.path)
+        open ? openDirs.delete(n.path) : openDirs.add(n.path)
         load()
       }
+
       el.appendChild(row)
       if(open) render(n.children, el, depth+1)
     } else {
       row.innerHTML=`<div class="arrow"></div><div class="file">${n.name}</div>`
+
       const del=document.createElement("div")
       del.className="del"
       del.textContent="×"
@@ -132,7 +147,9 @@ function download(p,n){
     .then(b=>{
       const u=URL.createObjectURL(b)
       const a=document.createElement("a")
-      a.href=u; a.download=n; a.click()
+      a.href=u
+      a.download=n
+      a.click()
       URL.revokeObjectURL(u)
     })
 }
@@ -144,10 +161,6 @@ async function upload(){
   const CHUNK = 10 * 1024 * 1024
 
   for(const file of files){
-    const rel = file.webkitRelativePath
-      ? file.webkitRelativePath.split("/").slice(1).join("/")
-      : file.name
-
     const base = cwd
     const total = Math.ceil(file.size / CHUNK)
 
