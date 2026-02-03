@@ -29,58 +29,58 @@ input,button{background:#020617;border:1px solid #1e293b;color:#e5e7eb;padding:8
   </div>
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
 <script>
-const BACKEND="https://edited-estimate-accessory-painted.trycloudflare.com"
-let current=""
+const BACKEND = "https://horizon-clause-looking-extended.trycloudflare.com"
 
-function h(){return{"x-password":pw.value,"x-path":current}}
-
-function render(list, el){
-  list.forEach(i=>{
-    const d=document.createElement("div")
-    d.className="item "+i.type
-    d.textContent=i.name
-    if(i.type==="dir"){
-      d.onclick=()=>{current=i.path;load()}
-      el.appendChild(d)
-      const sub=document.createElement("div")
-      sub.style.paddingLeft="12px"
-      el.appendChild(sub)
-      render(i.children,sub)
-    }else{
-      d.onclick=()=>{
-        fetch(BACKEND+"/download?path="+encodeURIComponent(i.path),{headers:h()})
-        .then(r=>r.blob()).then(b=>{
-          const u=URL.createObjectURL(b)
-          const a=document.createElement("a")
-          a.href=u;a.download=i.name;a.click()
-          URL.revokeObjectURL(u)
-        })
-      }
-      el.appendChild(d)
-    }
-  })
+function headers(){
+  return { "x-password": document.getElementById("pw").value }
 }
 
-function load(){
-  fetch(BACKEND+"/files",{headers:h()})
-  .then(r=>r.json())
-  .then(d=>{
-    tree.innerHTML=""
-    render(d,tree)
-  })
-}
+async function upload(){
+  const input = document.getElementById("file")
+  if (!input.files.length) return
 
-function upload(){
-  const fd=new FormData()
-  for(const f of file.files){
-    fd.append("files",f,f.webkitRelativePath||f.name)
+  const file = input.files[0]
+
+  if (file.type === "application/zip" || file.name.endsWith(".zip")) {
+    uploadFile(file)
+  } else {
+    alert("Only ZIP files or folders are allowed")
   }
-  fetch(BACKEND+"/upload",{method:"POST",headers:{"x-password":pw.value,"x-path":current},body:fd})
-  .then(()=>load())
 }
 
-load()
+async function uploadFolder(files){
+  const zip = new JSZip()
+  for (const f of files) {
+    zip.file(f.webkitRelativePath || f.name, f)
+  }
+  const blob = await zip.generateAsync({ type: "blob" })
+  const zipped = new File([blob], "folder.zip", { type: "application/zip" })
+  uploadFile(zipped)
+}
+
+function uploadFile(file){
+  const fd = new FormData()
+  fd.append("file", file)
+
+  fetch(BACKEND + "/upload", {
+    method: "POST",
+    headers: headers(),
+    body: fd
+  })
+  .then(r => r.json())
+  .then(d => alert("Uploaded: " + d.uploaded))
+}
+
+function onPick(e){
+  const files = e.target.files
+  if (files.length > 1) {
+    uploadFolder(files)
+  } else {
+    upload()
+  }
+}
 </script>
 </body>
 </html>
