@@ -1,66 +1,73 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
 <meta charset="UTF-8">
 <title>My Cloud</title>
 <style>
+:root{
+  --bg:#0b0f19;
+  --panel:#020617;
+  --border:#1e293b;
+  --hover:#1e293b;
+  --text:#e5e7eb;
+  --muted:#94a3b8;
+  --accent:#38bdf8;
+  --danger:#ef4444;
+}
 *{box-sizing:border-box}
 body{
   margin:0;
-  font-family:system-ui,Segoe UI,Roboto,Arial;
-  background:#0b0f19;
-  color:#e5e7eb
+  font-family:system-ui,Segoe UI,Roboto;
+  background:var(--bg);
+  color:var(--text)
 }
 .app{display:flex;height:100vh}
 .sidebar{
-  width:280px;
-  background:#020617;
-  padding:8px;
-  overflow:auto;
-  border-right:1px solid #1e293b
+  width:320px;
+  background:var(--panel);
+  border-right:1px solid var(--border);
+  padding:6px;
+  overflow:auto
 }
-.main{
-  flex:1;
-  padding:10px
-}
-.toolbar{
-  display:flex;
-  gap:8px;
-  margin-bottom:10px
-}
-.item{
-  padding:4px 8px;
-  border-radius:6px;
-  cursor:pointer;
-  user-select:none
-}
-.item:hover{background:#1e293b}
-.dir{color:#38bdf8;font-weight:600}
-.file{color:#e5e7eb}
-.path{
-  color:#94a3b8;
-  font-size:13px;
-  margin-bottom:6px
-}
+.main{flex:1;padding:10px}
+.toolbar{display:flex;gap:8px;margin-bottom:8px}
 input,button{
-  background:#020617;
-  border:1px solid #1e293b;
-  color:#e5e7eb;
-  padding:6px 10px;
+  background:var(--panel);
+  border:1px solid var(--border);
+  color:var(--text);
+  padding:6px 12px;
   border-radius:8px
 }
-button{cursor:pointer}
+button:hover{background:var(--hover)}
+.path{font-size:13px;color:var(--muted);margin-bottom:6px}
+
+.row{
+  display:flex;
+  align-items:center;
+  gap:6px;
+  padding:3px 6px;
+  border-radius:6px;
+  cursor:pointer
+}
+.row:hover{background:var(--hover)}
+.arrow{width:14px;color:var(--muted)}
+.dir{color:var(--accent);font-weight:600}
+.file{color:var(--text)}
+.del{
+  margin-left:auto;
+  color:var(--danger);
+  cursor:pointer
+}
 </style>
 </head>
 <body>
 
 <div class="app">
   <div class="sidebar" id="tree"></div>
-
   <div class="main">
     <div class="path" id="cwd">/</div>
     <div class="toolbar">
-      <input type="file" id="picker" multiple webkitdirectory>
+      <input type="file" id="picker" multiple webkitdirectory accept="*/*">
       <button onclick="upload()">Upload</button>
       <button onclick="goRoot()">Root</button>
     </div>
@@ -68,41 +75,44 @@ button{cursor:pointer}
 </div>
 
 <script>
-const BACKEND = "https://emily-cologne-untitled-humanity.trycloudflare.com"
-
+const BACKEND = "https://created-pierce-eventually-src.trycloudflare.com"
 let cwd = ""
+const openDirs = new Set()
 
-function goRoot(){
-  cwd=""
-  load()
-  updatePath()
-}
+function goRoot(){ cwd=""; load(); updatePath() }
+function updatePath(){ cwdEl.textContent="/"+(cwd||"") }
 
-function updatePath(){
-  document.getElementById("cwd").textContent = "/" + (cwd || "")
-}
-
-function render(nodes, el){
+function render(nodes, el, depth=0){
   nodes.forEach(n=>{
-    const d=document.createElement("div")
-    d.className="item "+n.type
-    d.textContent=n.name
+    const row=document.createElement("div")
+    row.className="row"
+    row.style.marginLeft=(depth*14)+"px"
 
     if(n.type==="dir"){
-      d.onclick=()=>{
-        cwd = n.path
-        load()
-        updatePath()
-      }
-      el.appendChild(d)
+      const open=openDirs.has(n.path)
+      row.innerHTML=`<div class="arrow">${open?"▼":"▶"}</div><div class="dir">${n.name}</div>`
+      const del=document.createElement("div")
+      del.className="del"
+      del.textContent="×"
+      del.onclick=e=>{e.stopPropagation();remove(n.path)}
+      row.appendChild(del)
 
-      const sub=document.createElement("div")
-      sub.style.paddingLeft="14px"
-      el.appendChild(sub)
-      render(n.children,sub)
-    }else{
-      d.onclick=()=>download(n.path,n.name)
-      el.appendChild(d)
+      row.onclick=()=>{
+        open?openDirs.delete(n.path):openDirs.add(n.path)
+        load()
+      }
+      el.appendChild(row)
+      if(open) render(n.children, el, depth+1)
+    } else {
+      row.innerHTML=`<div class="arrow"></div><div class="file">${n.name}</div>`
+      const del=document.createElement("div")
+      del.className="del"
+      del.textContent="×"
+      del.onclick=e=>{e.stopPropagation();remove(n.path)}
+      row.appendChild(del)
+
+      row.onclick=()=>download(n.path,n.name)
+      el.appendChild(row)
     }
   })
 }
@@ -110,52 +120,57 @@ function render(nodes, el){
 function load(){
   fetch(BACKEND+"/files")
     .then(r=>r.json())
-    .then(data=>{
+    .then(d=>{
       tree.innerHTML=""
-      render(data,tree)
+      render(d, tree)
     })
 }
 
-function download(path,name){
-  fetch(BACKEND+"/download?path="+encodeURIComponent(path))
+function download(p,n){
+  fetch(BACKEND+"/download?path="+encodeURIComponent(p))
     .then(r=>r.blob())
     .then(b=>{
       const u=URL.createObjectURL(b)
       const a=document.createElement("a")
-      a.href=u
-      a.download=name
-      a.click()
+      a.href=u; a.download=n; a.click()
       URL.revokeObjectURL(u)
     })
 }
 
-function upload(){
-  const files=picker.files
+async function upload(){
+  const files = picker.files
   if(!files.length) return
 
-  const fd=new FormData()
-  let base=cwd
+  const CHUNK = 10 * 1024 * 1024
 
-  if(files[0].webkitRelativePath){
-    const top=files[0].webkitRelativePath.split("/")[0]
-    base = base ? base+"/"+top : top
+  for(const file of files){
+    const rel = file.webkitRelativePath
+      ? file.webkitRelativePath.split("/").slice(1).join("/")
+      : file.name
+
+    const base = cwd
+    const total = Math.ceil(file.size / CHUNK)
+
+    for(let i=0;i<total;i++){
+      const chunk=file.slice(i*CHUNK, Math.min((i+1)*CHUNK, file.size))
+      await fetch(
+        `${BACKEND}/upload-chunk?name=${encodeURIComponent(file.name)}&chunkIndex=${i}&totalChunks=${total}&path=${encodeURIComponent(base)}`,
+        { method:"POST", body:chunk }
+      )
+    }
   }
 
-  for(const f of files){
-    const rel = f.webkitRelativePath
-      ? f.webkitRelativePath.split("/").slice(1).join("/")
-      : f.name
-    fd.append("files",f,rel)
-  }
+  picker.value=""
+  load()
+}
 
-  fetch(BACKEND+"/upload",{
+function remove(p){
+  if(!confirm("Delete "+p+" ?")) return
+  fetch(BACKEND+"/delete",{
     method:"POST",
-    headers:{ "x-path": base },
-    body:fd
-  }).then(()=>{
-    picker.value=""
-    load()
-  })
+    headers:{ "Content-Type":"application/json" },
+    body:JSON.stringify({ path:p })
+  }).then(()=>load())
 }
 
 load()
