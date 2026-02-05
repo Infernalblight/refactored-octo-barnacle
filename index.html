@@ -42,6 +42,22 @@ button{
 button:hover{background:var(--hover)}
 .path{font-size:13px;color:var(--muted);margin-bottom:6px}
 
+.progress{
+  height:8px;
+  width:100%;
+  background:#020617;
+  border:1px solid var(--border);
+  border-radius:6px;
+  overflow:hidden;
+  margin-bottom:8px
+}
+.bar{
+  height:100%;
+  width:0%;
+  background:var(--accent);
+  transition:width .1s linear
+}
+
 .row{
   display:flex;
   align-items:center;
@@ -64,6 +80,9 @@ button:hover{background:var(--hover)}
   <div class="sidebar" id="tree"></div>
   <div class="main">
     <div class="path" id="cwd">/</div>
+
+    <div class="progress"><div class="bar" id="bar"></div></div>
+
     <div class="toolbar">
       <button onclick="pickFolder()">Upload Folder</button>
       <button onclick="pickArchive()">Upload Archive</button>
@@ -82,10 +101,15 @@ const tree = document.getElementById("tree")
 const cwdEl = document.getElementById("cwd")
 const folderPicker = document.getElementById("folderPicker")
 const archivePicker = document.getElementById("archivePicker")
+const bar = document.getElementById("bar")
 
 let cwd = ""
 const openDirs = new Set()
 const CHUNK = 10 * 1024 * 1024
+
+function setProgress(p){
+  bar.style.width = Math.min(100, Math.max(0, p)) + "%"
+}
 
 function goRoot(){
   cwd=""
@@ -96,7 +120,6 @@ function goRoot(){
 function updatePath(){
   cwdEl.textContent="/" + (cwd || "")
 }
-
 
 function pickFolder(){
   folderPicker.value=""
@@ -111,9 +134,15 @@ function pickArchive(){
 folderPicker.onchange = () => uploadFolder(folderPicker.files)
 archivePicker.onchange = () => uploadArchive(archivePicker.files[0])
 
-
 async function uploadFolder(files){
   if(!files.length) return
+  let done = 0
+  let totalChunks = 0
+
+  for(const f of files){
+    totalChunks += Math.ceil(f.size / CHUNK)
+  }
+
   const top = files[0].webkitRelativePath.split("/")[0]
 
   for(const f of files){
@@ -126,15 +155,19 @@ async function uploadFolder(files){
         `${BACKEND}/upload-chunk?folder=${encodeURIComponent(top)}&file=${encodeURIComponent(rel)}&chunkIndex=${i}&totalChunks=${total}`,
         { method:"POST", body:chunk }
       )
+      done++
+      setProgress(done / totalChunks * 100)
     }
   }
+
+  setProgress(100)
   load()
 }
-
 
 async function uploadArchive(file){
   if(!file) return
   const total = Math.ceil(file.size / CHUNK)
+  let done = 0
 
   for(let i=0;i<total;i++){
     const chunk = file.slice(i*CHUNK, Math.min((i+1)*CHUNK, file.size))
@@ -142,10 +175,13 @@ async function uploadArchive(file){
       `${BACKEND}/upload-archive?name=${encodeURIComponent(file.name)}&chunkIndex=${i}&totalChunks=${total}`,
       { method:"POST", body:chunk }
     )
+    done++
+    setProgress(done / total * 100)
   }
+
+  setProgress(100)
   load()
 }
-
 
 function render(nodes, el, depth = 0){
   nodes.forEach(n => {
@@ -191,7 +227,6 @@ function render(nodes, el, depth = 0){
   })
 }
 
-
 function load(){
   fetch(BACKEND+"/files")
     .then(r=>r.json())
@@ -200,7 +235,6 @@ function load(){
       render(d, tree)
     })
 }
-
 
 function remove(p){
   if(!confirm("Delete " + p + " ?")) return
