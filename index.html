@@ -1,12 +1,14 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
 <meta charset="UTF-8">
 <title>My Cloud</title>
+
 <style>
 :root{
-  --bg:#0b0f19;
-  --panel:#020617;
+  --bg:#0a0f1e;
+  --panel:#0f172a;
+  --panel-soft:#020617;
   --border:#1e293b;
   --hover:#1e293b;
   --text:#e5e7eb;
@@ -14,74 +16,163 @@
   --accent:#38bdf8;
   --danger:#ef4444;
 }
+
 *{box-sizing:border-box}
+
 body{
   margin:0;
-  font-family:system-ui,Segoe UI,Roboto;
-  background:var(--bg);
-  color:var(--text)
+  font-family: Inter, system-ui, Segoe UI, Roboto;
+  background:linear-gradient(180deg,#020617,#020617 40%,#020617);
+  color:var(--text);
 }
-.app{display:flex;height:100vh}
+
+.app{
+  display:flex;
+  height:100vh;
+  gap:10px;
+  padding:10px;
+}
+
 .sidebar{
   width:320px;
   background:var(--panel);
-  border-right:1px solid var(--border);
-  padding:6px;
-  overflow:auto
+  border:1px solid var(--border);
+  border-radius:14px;
+  padding:8px;
+  overflow:auto;
 }
-.main{flex:1;padding:10px}
-.toolbar{display:flex;gap:8px;margin-bottom:8px}
-button{
+
+.main{
+  flex:1;
   background:var(--panel);
   border:1px solid var(--border);
-  color:var(--text);
-  padding:6px 12px;
-  border-radius:8px;
-  cursor:pointer
+  border-radius:14px;
+  padding:14px;
+  display:flex;
+  flex-direction:column;
+  gap:14px;
 }
-button:hover{background:var(--hover)}
-.path{font-size:13px;color:var(--muted);margin-bottom:6px}
+
+.header{
+  display:flex;
+  flex-direction:column;
+  gap:4px;
+}
+
+.title{
+  font-size:18px;
+  font-weight:700;
+}
+
+.path{
+  font-size:13px;
+  color:var(--muted);
+}
+
+.progress-wrap{
+  display:flex;
+  flex-direction:column;
+  gap:6px;
+}
 
 .progress{
-  height:8px;
-  width:100%;
-  background:#020617;
+  height:10px;
+  background:var(--panel-soft);
   border:1px solid var(--border);
-  border-radius:6px;
+  border-radius:999px;
   overflow:hidden;
-  margin-bottom:8px
 }
+
 .bar{
   height:100%;
   width:0%;
-  background:var(--accent);
-  transition:width .1s linear
+  background:linear-gradient(90deg,#38bdf8,#60a5fa);
+  transition:width .15s ease;
 }
 
-.row{
+.status{
+  font-size:13px;
+  color:var(--muted);
+}
+
+.toolbar{
+  display:flex;
+  gap:10px;
+}
+
+button{
+  background:linear-gradient(180deg,#0b1227,#020617);
+  border:1px solid var(--border);
+  color:var(--text);
+  padding:8px 14px;
+  border-radius:10px;
+  cursor:pointer;
+  font-size:14px;
+}
+
+button:hover{
+  background:#020617;
+  border-color:#334155;
+}
+
+.tree-row{
   display:flex;
   align-items:center;
   gap:6px;
-  padding:3px 6px;
-  border-radius:6px;
-  cursor:pointer
+  padding:6px 8px;
+  border-radius:8px;
+  cursor:pointer;
+  user-select:none;
 }
-.row:hover{background:var(--hover)}
-.arrow{width:14px;color:var(--muted)}
-.dir{color:var(--accent);font-weight:600}
-.file{color:var(--text)}
-.del{margin-left:auto;color:var(--danger);cursor:pointer}
+
+.tree-row:hover{
+  background:var(--hover);
+}
+
+.arrow{
+  width:14px;
+  text-align:center;
+  color:var(--muted);
+}
+
+.dir{
+  color:var(--accent);
+  font-weight:600;
+}
+
+.file{
+  color:var(--text);
+}
+
+.del{
+  margin-left:auto;
+  color:var(--danger);
+  opacity:.7;
+}
+
+.del:hover{
+  opacity:1;
+}
+
 .hidden{display:none}
 </style>
 </head>
+
 <body>
 
 <div class="app">
   <div class="sidebar" id="tree"></div>
-  <div class="main">
-    <div class="path" id="cwd">/</div>
 
-    <div class="progress"><div class="bar" id="bar"></div></div>
+  <div class="main">
+    <div class="header">
+      <div class="title">My Cloud</div>
+      <div class="path" id="cwd">/</div>
+    </div>
+
+    <div class="progress-wrap">
+      <div class="progress"><div class="bar" id="bar"></div></div>
+      <div class="status" id="status">Idle</div>
+    </div>
 
     <div class="toolbar">
       <button onclick="pickFolder()">Upload Folder</button>
@@ -99,6 +190,7 @@ const BACKEND = "https://generates-amp-lyrics-branches.trycloudflare.com"
 
 const tree = document.getElementById("tree")
 const cwdEl = document.getElementById("cwd")
+const statusEl = document.getElementById("status")
 const folderPicker = document.getElementById("folderPicker")
 const archivePicker = document.getElementById("archivePicker")
 const bar = document.getElementById("bar")
@@ -107,18 +199,28 @@ let cwd = ""
 const openDirs = new Set()
 const CHUNK = 10 * 1024 * 1024
 
+let uploadStart = 0
+let uploadedBytes = 0
+
+function formatMB(n){ return (n / (1024 * 1024)).toFixed(2) }
+
 function setProgress(p){
-  bar.style.width = Math.min(100, Math.max(0, p)) + "%"
+  const percent = Math.min(100, Math.max(0, p))
+  bar.style.width = percent + "%"
+
+  const elapsed = (performance.now() - uploadStart) / 1000
+  const speed = elapsed > 0 ? formatMB(uploadedBytes / elapsed) : "0.00"
+
+  statusEl.textContent =
+    percent < 100
+      ? `${percent.toFixed(1)}% • ${speed} MB/s`
+      : "Completed"
 }
 
 function goRoot(){
   cwd=""
   load()
-  updatePath()
-}
-
-function updatePath(){
-  cwdEl.textContent="/" + (cwd || "")
+  cwdEl.textContent="/"
 }
 
 function pickFolder(){
@@ -136,6 +238,10 @@ archivePicker.onchange = () => uploadArchive(archivePicker.files[0])
 
 async function uploadFolder(files){
   if(!files.length) return
+  uploadStart = performance.now()
+  uploadedBytes = 0
+  statusEl.textContent = "Starting upload…"
+
   let done = 0
   let totalChunks = 0
 
@@ -155,6 +261,7 @@ async function uploadFolder(files){
         `${BACKEND}/upload-chunk?folder=${encodeURIComponent(top)}&file=${encodeURIComponent(rel)}&chunkIndex=${i}&totalChunks=${total}`,
         { method:"POST", body:chunk }
       )
+      uploadedBytes += chunk.size
       done++
       setProgress(done / totalChunks * 100)
     }
@@ -166,6 +273,10 @@ async function uploadFolder(files){
 
 async function uploadArchive(file){
   if(!file) return
+  uploadStart = performance.now()
+  uploadedBytes = 0
+  statusEl.textContent = "Starting upload…"
+
   const total = Math.ceil(file.size / CHUNK)
   let done = 0
 
@@ -175,6 +286,7 @@ async function uploadArchive(file){
       `${BACKEND}/upload-archive?name=${encodeURIComponent(file.name)}&chunkIndex=${i}&totalChunks=${total}`,
       { method:"POST", body:chunk }
     )
+    uploadedBytes += chunk.size
     done++
     setProgress(done / total * 100)
   }
@@ -183,45 +295,31 @@ async function uploadArchive(file){
   load()
 }
 
-function render(nodes, el, depth = 0){
-  nodes.forEach(n => {
-    const row = document.createElement("div")
-    row.className = "row"
-    row.style.marginLeft = (depth * 14) + "px"
+function render(nodes, el, depth=0){
+  nodes.forEach(n=>{
+    const row=document.createElement("div")
+    row.className="tree-row"
+    row.style.marginLeft=(depth*14)+"px"
 
-    if (n.type === "dir") {
-      const open = openDirs.has(n.path)
-
-      row.innerHTML = `
-        <div class="arrow">${open ? "▼" : "▶"}</div>
+    if(n.type==="dir"){
+      const open=openDirs.has(n.path)
+      row.innerHTML=`
+        <div class="arrow">${open?"▼":"▶"}</div>
         <div class="dir">${n.name}</div>
       `
-
-      const del = document.createElement("div")
-      del.className = "del"
-      del.textContent = "×"
-      del.onclick = e => { e.stopPropagation(); remove(n.path) }
+      const del=document.createElement("div")
+      del.className="del"
+      del.textContent="×"
+      del.onclick=e=>{e.stopPropagation();remove(n.path)}
       row.appendChild(del)
 
-      row.onclick = () => {
-        open ? openDirs.delete(n.path) : openDirs.add(n.path)
-        load()
-      }
-
-      row.ondblclick = () =>
-        window.open(`${BACKEND}/download-folder?path=${encodeURIComponent(n.path)}`)
-
+      row.onclick=()=>{open?openDirs.delete(n.path):openDirs.add(n.path);load()}
+      row.ondblclick=()=>window.open(`${BACKEND}/download-folder?path=${encodeURIComponent(n.path)}`)
       el.appendChild(row)
 
-      if (open && n.children) {
-        render(n.children, el, depth + 1)
-      }
-
-    } else {
-      row.innerHTML = `
-        <div class="arrow"></div>
-        <div class="file">${n.name}</div>
-      `
+      if(open && n.children) render(n.children, el, depth+1)
+    }else{
+      row.innerHTML=`<div class="arrow"></div><div class="file">${n.name}</div>`
       el.appendChild(row)
     }
   })
@@ -237,7 +335,7 @@ function load(){
 }
 
 function remove(p){
-  if(!confirm("Delete " + p + " ?")) return
+  if(!confirm("Delete "+p+" ?")) return
   fetch(BACKEND+"/delete",{
     method:"POST",
     headers:{ "Content-Type":"application/json" },
@@ -246,7 +344,6 @@ function remove(p){
 }
 
 load()
-updatePath()
 </script>
 
 </body>
