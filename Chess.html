@@ -59,30 +59,32 @@ const turnEl=document.getElementById("turn")
 const moveSound=document.getElementById("moveSound")
 
 let turn="white"
-let selectedIndex=null
-let moves=[]
+let selected=null
+let legalMoves=[]
 
-const pieces=[
-"br","bn","bb","bq","bk","bb","bn","br",
-"bp","bp","bp","bp","bp","bp","bp","bp",
-"","","","","","","","",
-"","","","","","","","",
-"","","","","","","","",
-"","","","","","","","",
-"wp","wp","wp","wp","wp","wp","wp","wp",
-"wr","wn","wb","wq","wk","wb","wn","wr"
+let board=[
+["br","bn","bb","bq","bk","bb","bn","br"],
+["bp","bp","bp","bp","bp","bp","bp","bp"],
+["","","","","","","",""],
+["","","","","","","",""],
+["","","","","","","",""],
+["","","","","","","",""],
+["wp","wp","wp","wp","wp","wp","wp","wp"],
+["wr","wn","wb","wq","wk","wb","wn","wr"]
 ]
 
 function draw(){
 boardEl.innerHTML=""
-for(let i=0;i<64;i++){
+for(let r=0;r<8;r++){
+for(let c=0;c<8;c++){
 const sq=document.createElement("div")
-sq.className="square "+((Math.floor(i/8)+i)%2?"black":"white")
-sq.textContent=pieceChar(pieces[i])
-if(i===selectedIndex) sq.classList.add("selected")
-if(moves.includes(i)) sq.classList.add("move")
-sq.onclick=()=>click(i)
+sq.className="square "+((r+c)%2?"black":"white")
+sq.textContent=pieceChar(board[r][c])
+if(selected&&selected.r===r&&selected.c===c) sq.classList.add("selected")
+if(legalMoves.some(m=>m.r===r&&m.c===c)) sq.classList.add("move")
+sq.onclick=()=>click(r,c)
 boardEl.appendChild(sq)
+}
 }
 }
 
@@ -94,12 +96,19 @@ bp:"♟",br:"♜",bn:"♞",bb:"♝",bq:"♛",bk:"♚"
 return map[p]||""
 }
 
-function click(i){
-if(selectedIndex!==null && moves.includes(i)){
-pieces[i]=pieces[selectedIndex]
-pieces[selectedIndex]=""
-selectedIndex=null
-moves=[]
+function click(r,c){
+if(selected){
+for(let m of legalMoves){
+if(m.r===r&&m.c===c){
+if(board[r][c]&&board[r][c][1]==="k"){
+alert((turn==="white"?"White":"Black")+" wins")
+location.reload()
+return
+}
+board[r][c]=board[selected.r][selected.c]
+board[selected.r][selected.c]=""
+selected=null
+legalMoves=[]
 moveSound.currentTime=0
 moveSound.play()
 turn=turn==="white"?"black":"white"
@@ -107,80 +116,110 @@ turnEl.textContent="Turn: "+(turn==="white"?"White":"Black")
 draw()
 return
 }
-if(pieces[i] && pieces[i][0]===turn[0]){
-selectedIndex=i
-moves=getMoves(i)
+}
+}
+if(board[r][c]&&board[r][c][0]===turn[0]){
+selected={r,c}
+legalMoves=getLegalMoves(r,c)
 draw()
 }else{
-selectedIndex=null
-moves=[]
+selected=null
+legalMoves=[]
 draw()
 }
 }
 
-function getMoves(i){
-const p=pieces[i]
+function getLegalMoves(r,c){
+let raw=getMoves(r,c)
+let safe=[]
+for(let m of raw){
+let copy=JSON.parse(JSON.stringify(board))
+copy[m.r][m.c]=copy[r][c]
+copy[r][c]=""
+if(!inCheck(copy,board[r][c][0])) safe.push(m)
+}
+return safe
+}
+
+function inCheck(b,color){
+let kr,kc
+for(let r=0;r<8;r++){
+for(let c=0;c<8;c++){
+if(b[r][c]===color+"k"){kr=r;kc=c}
+}
+}
+for(let r=0;r<8;r++){
+for(let c=0;c<8;c++){
+if(b[r][c]&&b[r][c][0]!==color){
+let moves=getMoves(r,c,b)
+if(moves.some(m=>m.r===kr&&m.c===kc)) return true
+}
+}
+}
+return false
+}
+
+function getMoves(r,c,b=board){
+const p=b[r][c]
 if(!p) return []
 const color=p[0]
 const type=p[1]
-const r=Math.floor(i/8)
 let m=[]
 const dir=color==="w"?-1:1
 
 if(type==="p"){
-let f=i+dir*8
-if(!pieces[f]) m.push(f)
+if(inBounds(r+dir,c)&&!b[r+dir][c]) m.push({r:r+dir,c})
 if((color==="w"&&r===6)||(color==="b"&&r===1)){
-let ff=i+dir*16
-if(!pieces[f]&&!pieces[ff]) m.push(ff)
+if(!b[r+dir][c]&&!b[r+2*dir][c]) m.push({r:r+2*dir,c})
 }
 for(let dc of [-1,1]){
-let cap=i+dir*8+dc
-if(cap>=0&&cap<64&&pieces[cap]&&pieces[cap][0]!==color) m.push(cap)
+let nr=r+dir,nc=c+dc
+if(inBounds(nr,nc)&&b[nr][nc]&&b[nr][nc][0]!==color) m.push({r:nr,c:nc})
 }
 }
 
-if(type==="r"||type==="q"){
-for(let d of [-8,8,-1,1]){
-let x=i+d
-while(x>=0&&x<64&&Math.abs((x%8)-(i%8))<=1){
-if(!pieces[x]) m.push(x)
-else{if(pieces[x][0]!==color) m.push(x);break}
-x+=d
-}
-}
-}
-
-if(type==="b"||type==="q"){
-for(let d of [-9,-7,7,9]){
-let x=i+d
-while(x>=0&&x<64&&Math.abs((x%8)-(i%8))===Math.abs((x-d)%8-(i%8))){
-if(!pieces[x]) m.push(x)
-else{if(pieces[x][0]!==color) m.push(x);break}
-x+=d
-}
-}
-}
+if(type==="r"||type==="q") lineMoves(r,c,color,[[1,0],[-1,0],[0,1],[0,-1]],m,b)
+if(type==="b"||type==="q") lineMoves(r,c,color,[[1,1],[1,-1],[-1,1],[-1,-1]],m,b)
 
 if(type==="n"){
-for(let d of [-17,-15,-10,-6,6,10,15,17]){
-let x=i+d
-if(x>=0&&x<64&&Math.abs((x%8)-(i%8))<=2){
-if(!pieces[x]||pieces[x][0]!==color) m.push(x)
-}
+for(let [dr,dc] of [[2,1],[2,-1],[-2,1],[-2,-1],[1,2],[1,-2],[-1,2],[-1,-2]]){
+let nr=r+dr,nc=c+dc
+if(inBounds(nr,nc)&&(!b[nr][nc]||b[nr][nc][0]!==color)) m.push({r:nr,c:nc})
 }
 }
 
 if(type==="k"){
-for(let d of [-9,-8,-7,-1,1,7,8,9]){
-let x=i+d
-if(x>=0&&x<64&&Math.abs((x%8)-(i%8))<=1){
-if(!pieces[x]||pieces[x][0]!==color) m.push(x)
+for(let dr=-1;dr<=1;dr++){
+for(let dc=-1;dc<=1;dc++){
+if(dr||dc){
+let nr=r+dr,nc=c+dc
+if(inBounds(nr,nc)&&(!b[nr][nc]||b[nr][nc][0]!==color)) m.push({r:nr,c:nc})
+}
 }
 }
 }
 
 return m
+}
+
+function lineMoves(r,c,color,dirs,m,b){
+for(let [dr,dc] of dirs){
+let nr=r+dr,nc=c+dc
+while(inBounds(nr,nc)){
+if(!b[nr][nc]){
+m.push({r:nr,c:nc})
+}else{
+if(b[nr][nc][0]!==color) m.push({r:nr,c:nc})
+break
+}
+nr+=dr
+nc+=dc
+}
+}
+}
+
+function inBounds(r,c){
+return r>=0&&r<8&&c>=0&&c<8
 }
 
 draw()
