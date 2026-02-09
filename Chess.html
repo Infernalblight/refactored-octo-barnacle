@@ -5,12 +5,12 @@
 <title>Chess</title>
 <style>
 body{
+margin:0;
 display:flex;
 justify-content:center;
 align-items:center;
 height:100vh;
 background:#111;
-margin:0;
 }
 #game{
 display:flex;
@@ -25,30 +25,24 @@ font-size:18px;
 }
 #board{
 display:grid;
-grid-template-columns:repeat(8,60px);
-grid-template-rows:repeat(8,60px);
-border:4px solid #444;
+grid-template-columns:repeat(8,70px);
+grid-template-rows:repeat(8,70px);
+border:4px solid #555;
 }
 .square{
-width:60px;
-height:60px;
+width:70px;
+height:70px;
 display:flex;
 justify-content:center;
 align-items:center;
-font-size:36px;
+font-size:42px;
 cursor:pointer;
 user-select:none;
 }
-.white{
-background:#eee;
-}
-.black{
-background:#444;
-color:white;
-}
-.selected{
-outline:3px solid red;
-}
+.white{background:#eee}
+.black{background:#444;color:white}
+.selected{outline:3px solid red}
+.move{outline:3px solid lime}
 </style>
 </head>
 <body>
@@ -57,49 +51,139 @@ outline:3px solid red;
 <div id="board"></div>
 </div>
 
+<audio id="moveSound" src="/SFX/chess/chess.mp3"></audio>
+
 <script>
-const board=document.getElementById("board")
-const turnText=document.getElementById("turn")
+const boardEl=document.getElementById("board")
+const turnEl=document.getElementById("turn")
+const moveSound=document.getElementById("moveSound")
 
 let turn="white"
-let selected=null
+let selectedIndex=null
+let moves=[]
 
 const pieces=[
-"♜","♞","♝","♛","♚","♝","♞","♜",
-"♟","♟","♟","♟","♟","♟","♟","♟",
+"br","bn","bb","bq","bk","bb","bn","br",
+"bp","bp","bp","bp","bp","bp","bp","bp",
 "","","","","","","","",
 "","","","","","","","",
 "","","","","","","","",
 "","","","","","","","",
-"♙","♙","♙","♙","♙","♙","♙","♙",
-"♖","♘","♗","♕","♔","♗","♘","♖"
+"wp","wp","wp","wp","wp","wp","wp","wp",
+"wr","wn","wb","wq","wk","wb","wn","wr"
 ]
 
+function draw(){
+boardEl.innerHTML=""
 for(let i=0;i<64;i++){
 const sq=document.createElement("div")
 sq.className="square "+((Math.floor(i/8)+i)%2?"black":"white")
-sq.textContent=pieces[i]
-sq.addEventListener("click",()=>clickSquare(sq))
-board.appendChild(sq)
+sq.textContent=pieceChar(pieces[i])
+if(i===selectedIndex) sq.classList.add("selected")
+if(moves.includes(i)) sq.classList.add("move")
+sq.onclick=()=>click(i)
+boardEl.appendChild(sq)
+}
 }
 
-function clickSquare(sq){
-if(selected){
-selected.classList.remove("selected")
-if(sq!==selected){
-sq.textContent=selected.textContent
-selected.textContent=""
+function pieceChar(p){
+const map={
+wp:"♙",wr:"♖",wn:"♘",wb:"♗",wq:"♕",wk:"♔",
+bp:"♟",br:"♜",bn:"♞",bb:"♝",bq:"♛",bk:"♚"
+}
+return map[p]||""
+}
+
+function click(i){
+if(selectedIndex!==null && moves.includes(i)){
+pieces[i]=pieces[selectedIndex]
+pieces[selectedIndex]=""
+selectedIndex=null
+moves=[]
+moveSound.currentTime=0
+moveSound.play()
 turn=turn==="white"?"black":"white"
-turnText.textContent="Turn: "+(turn==="white"?"White":"Black")
+turnEl.textContent="Turn: "+(turn==="white"?"White":"Black")
+draw()
+return
 }
-selected=null
+if(pieces[i] && pieces[i][0]===turn[0]){
+selectedIndex=i
+moves=getMoves(i)
+draw()
 }else{
-if(sq.textContent!==""){
-selected=sq
-sq.classList.add("selected")
+selectedIndex=null
+moves=[]
+draw()
+}
+}
+
+function getMoves(i){
+const p=pieces[i]
+if(!p) return []
+const color=p[0]
+const type=p[1]
+const r=Math.floor(i/8)
+let m=[]
+const dir=color==="w"?-1:1
+
+if(type==="p"){
+let f=i+dir*8
+if(!pieces[f]) m.push(f)
+if((color==="w"&&r===6)||(color==="b"&&r===1)){
+let ff=i+dir*16
+if(!pieces[f]&&!pieces[ff]) m.push(ff)
+}
+for(let dc of [-1,1]){
+let cap=i+dir*8+dc
+if(cap>=0&&cap<64&&pieces[cap]&&pieces[cap][0]!==color) m.push(cap)
+}
+}
+
+if(type==="r"||type==="q"){
+for(let d of [-8,8,-1,1]){
+let x=i+d
+while(x>=0&&x<64&&Math.abs((x%8)-(i%8))<=1){
+if(!pieces[x]) m.push(x)
+else{if(pieces[x][0]!==color) m.push(x);break}
+x+=d
 }
 }
 }
+
+if(type==="b"||type==="q"){
+for(let d of [-9,-7,7,9]){
+let x=i+d
+while(x>=0&&x<64&&Math.abs((x%8)-(i%8))===Math.abs((x-d)%8-(i%8))){
+if(!pieces[x]) m.push(x)
+else{if(pieces[x][0]!==color) m.push(x);break}
+x+=d
+}
+}
+}
+
+if(type==="n"){
+for(let d of [-17,-15,-10,-6,6,10,15,17]){
+let x=i+d
+if(x>=0&&x<64&&Math.abs((x%8)-(i%8))<=2){
+if(!pieces[x]||pieces[x][0]!==color) m.push(x)
+}
+}
+}
+
+if(type==="k"){
+for(let d of [-9,-8,-7,-1,1,7,8,9]){
+let x=i+d
+if(x>=0&&x<64&&Math.abs((x%8)-(i%8))<=1){
+if(!pieces[x]||pieces[x][0]!==color) m.push(x)
+}
+}
+}
+
+return m
+}
+
+draw()
 </script>
 </body>
 </html>
