@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <title>Chess AI Project</title>
 <link rel="stylesheet" href="style.css">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
 </head>
 <body>
@@ -27,7 +28,7 @@
   </div>
 </div>
 
-<audio id="moveAudio" src="/SFX/Chess/chess.mp3"></audio>
+<audio id="moveAudio" src="chess.mp3"></audio>
 
 <script>
 const game = new Chess();
@@ -63,6 +64,7 @@ function draw(positionGame=game){
         el.textContent=pieces[piece.color==="w"?piece.type.toUpperCase():piece.type];
         el.className="piece";
         el.onmousedown=(e)=>startDrag(e,name,el);
+        el.ontouchstart=(e)=>startDrag(e,name,el);
         sq.appendChild(el);
       }
       boardEl.appendChild(sq);
@@ -72,7 +74,14 @@ function draw(positionGame=game){
   renderGameList();
 }
 
+function getEventPos(e){
+  if(e.touches && e.touches.length>0) return {x:e.touches[0].clientX,y:e.touches[0].clientY};
+  if(e.changedTouches && e.changedTouches.length>0) return {x:e.changedTouches[0].clientX,y:e.changedTouches[0].clientY};
+  return {x:e.clientX,y:e.clientY};
+}
+
 function startDrag(e,square,el){
+  e.preventDefault();
   if(reviewIndex!==null) return;
   const piece=game.get(square);
   if(!piece || piece.color!==game.turn() || (aiOn && piece.color==="b")) return;
@@ -87,16 +96,28 @@ function startDrag(e,square,el){
   dragClone.style.zIndex=1000;
   dragClone.style.fontSize="48px";
   document.body.appendChild(dragClone);
+
   moveClone(e);
   document.onmousemove=moveClone;
   document.onmouseup=stopDrag;
+  document.ontouchmove=moveClone;
+  document.ontouchend=stopDrag;
 }
 
-function moveClone(e){ dragClone.style.left=(e.clientX-24)+"px"; dragClone.style.top=(e.clientY-24)+"px"; }
+function moveClone(e){
+  if(!dragClone) return;
+  const p=getEventPos(e);
+  dragClone.style.left=(p.x-24)+"px";
+  dragClone.style.top=(p.y-24)+"px";
+}
 
 function stopDrag(e){
-  document.onmousemove=null; document.onmouseup=null;
-  const square=getSquare(e.clientX,e.clientY);
+  document.onmousemove=null;
+  document.onmouseup=null;
+  document.ontouchmove=null;
+  document.ontouchend=null;
+  const p=getEventPos(e);
+  const square=getSquare(p.x,p.y);
   if(dragClone) document.body.removeChild(dragClone);
   dragClone=null;
 
@@ -206,4 +227,3 @@ renderGameList();
 </script>
 </body>
 </html>
-
