@@ -27,20 +27,19 @@
   </div>
 </div>
 
-<audio id="moveAudio" src="chess.mp3"></audio>
+<audio id="moveAudio" src="/SFX/Chess/chess.mp3"></audio>
 
 <script>
 const game = new Chess();
 let aiOn=false, dragSource=null, dragClone=null, legalTargets=[], moveHistory=[], reviewIndex=null;
 
-// DOM elements
 const boardEl=document.getElementById("board");
 const statusEl=document.getElementById("status");
 const infoEl=document.getElementById("info");
 const moveAudio=document.getElementById("moveAudio");
 const gameListEl=document.getElementById("gameList");
 
-let aiMemory = JSON.parse(localStorage.getItem("aiMemory")||"{}"); // AI learning data
+let aiMemory = JSON.parse(localStorage.getItem("aiMemory")||"{}");
 
 const pieces={p:"♟",r:"♜",n:"♞",b:"♝",q:"♛",k:"♚",
               P:"♙",R:"♖",N:"♘",B:"♗",Q:"♕",K:"♔"};
@@ -73,7 +72,6 @@ function draw(positionGame=game){
   renderGameList();
 }
 
-// Drag & drop
 function startDrag(e,square,el){
   if(reviewIndex!==null) return;
   const piece=game.get(square);
@@ -122,18 +120,15 @@ function getSquare(x,y){
   return null;
 }
 
-// Buttons
 document.getElementById("toggleAI").onclick=()=>{ aiOn=!aiOn; document.getElementById("toggleAI").innerText="AI: "+(aiOn?"ON":"OFF"); if(aiOn && game.turn()==="b") setTimeout(aiMove,1000); };
 document.getElementById("newGame").onclick=newGame;
 document.getElementById("exportAI").onclick=exportAIData;
 document.getElementById("importBtn").onclick=()=>document.getElementById("importAI").click();
 document.getElementById("importAI").onchange=importAIData;
 
-// Game functions
 function newGame(){ saveGame(); game.reset(); moveHistory=[]; reviewIndex=null; draw(); infoEl.innerText=""; }
 function saveGame(){ if(moveHistory.length===0) return; const games=JSON.parse(localStorage.getItem("savedGames")||"[]"); games.push(moveHistory.map(m=>m.san)); localStorage.setItem("savedGames",JSON.stringify(games)); }
 
-// AI memory functions
 function learnMove(move){
   const fen=game.fen();
   if(!aiMemory[fen]) aiMemory[fen]={};
@@ -159,7 +154,6 @@ function importAIData(e){
   reader.readAsText(file);
 }
 
-// AI move
 function aiMove(){
   const best=minimaxRoot(3,game,true);
   game.move(best);
@@ -169,14 +163,12 @@ function aiMove(){
   draw();
 }
 
-// Minimax
 function minimaxRoot(depth,game,isMax){ const moves=game.moves({verbose:true}); let bestMove=null, bestValue=-9999; for(let m of moves){ game.move(m); const value=minimax(depth-1,game,-10000,10000,!isMax); game.undo(); if(value>=bestValue){ bestValue=value; bestMove=m; bestValue=value; } } return bestMove; }
 
 function minimax(depth,game,alpha,beta,isMax){ if(depth===0) return -evaluateBoard(game.board()); const moves=game.moves({verbose:true}); if(isMax){ let best=-9999; for(let m of moves){ game.move(m); best=Math.max(best,minimax(depth-1,game,alpha,beta,false)); game.undo(); alpha=Math.max(alpha,best); if(beta<=alpha) break; } return best; }else{ let best=9999; for(let m of moves){ game.move(m); best=Math.min(best,minimax(depth-1,game,alpha,beta,true)); game.undo(); beta=Math.min(beta,best); if(beta<=alpha) break; } return best; } }
 
 function evaluateBoard(board){ const values={p:100,n:320,b:330,r:500,q:900,k:20000}; let total=0; for(let row of board){ for(let piece of row){ if(piece){ const val=values[piece.type]; total+=piece.color==="w"?val:-val; } } } return total; }
 
-// Review mode with arrow keys
 document.addEventListener("keydown",e=>{
   const games=JSON.parse(localStorage.getItem("savedGames")||"[]");
   if(games.length===0) return;
@@ -187,7 +179,6 @@ document.addEventListener("keydown",e=>{
 
 function reviewGame(index,lastGame){ const review=new Chess(); for(let i=0;i<=index && i<lastGame.length;i++) review.move(lastGame[i]); draw(review); infoEl.innerText="Review Move: "+(index+1)+" / "+lastGame.length; }
 
-// Render saved game list
 function renderGameList(){
   const games=JSON.parse(localStorage.getItem("savedGames")||"[]");
   gameListEl.innerHTML="";
@@ -208,7 +199,6 @@ function reviewSavedGame(index){
   draw();
 }
 
-// Update status
 function updateStatus(){ statusEl.innerText=game.in_checkmate()?"CHECKMATE":game.in_draw()?"DRAW":(game.turn()==="w"?"White":"Black")+" to move"; }
 
 draw();
@@ -216,3 +206,4 @@ renderGameList();
 </script>
 </body>
 </html>
+
