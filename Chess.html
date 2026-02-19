@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Chess AI Project</title>
+<link rel="stylesheet" href="style.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
+</head>
+<body>
+<div class="container">
+  <h1>Smart Chess AI</h1>
+  <div class="controls">
+    <button id="toggleAI">AI: OFF</button>
+    <button id="newGame">New Game</button>
+    <button id="exportAI">Download AI Data</button>
+    <input type="file" id="importAI" style="display:none;">
+    <button id="importBtn">Import AI Data</button>
+  </div>
+  <div class="game-area">
+    <div id="board"></div>
+    <div class="sidebar">
+      <div id="status"></div>
+      <div id="info"></div>
+      <h3>Saved Games</h3>
+      <div id="gameList"></div>
+    </div>
+  </div>
+</div>
+
+<audio id="moveAudio" src="chess.mp3"></audio>
+
+<script>
+const game = new Chess();
+let aiOn=false, dragSource=null, dragClone=null, legalTargets=[], moveHistory=[], reviewIndex=null;
+
+// DOM elements
+const boardEl=document.getElementById("board");
+const statusEl=document.getElementById("status");
+const infoEl=document.getElementById("info");
+const moveAudio=document.getElementById("moveAudio");
+const gameListEl=document.getElementById("gameList");
+
+let aiMemory = JSON.parse(localStorage.getItem("aiMemory")||"{}"); // AI learning data
+
+const pieces={p:"♟",r:"♜",n:"♞",b:"♝",q:"♛",k:"♚",
+              P:"♙",R:"♖",N:"♘",B:"♗",Q:"♕",K:"♔"};
+
+function playMoveSound(){ moveAudio.currentTime=0; moveAudio.play().catch(()=>{}); }
+
+function draw(positionGame=game){
+  boardEl.innerHTML="";
+  const pos=positionGame.board();
+  for(let r=0;r<8;r++){
+    for(let c=0;c<8;c++){
+      const sq=document.createElement("div");
+      const name="abcdefgh"[c]+(8-r);
+      sq.className="square "+((r+c)%2?"dark":"light");
+      sq.dataset.square=name;
+      if(legalTargets.includes(name)) sq.classList.add("highlight");
+
+      const piece=pos[r][c];
+      if(piece){
+        const el=document.createElement("div");
+        el.textContent=pieces[piece.color==="w"?piece.type.toUpperCase():piece.type];
+        el.className="piece";
+        el.onmousedown=(e)=>startDrag(e,name,el);
+        sq.appendChild(el);
+      }
+      boardEl.appendChild(sq);
+    }
+  }
+  updateStatus();
+  renderGameList();
+}
+
+// Drag & drop
+function startDrag(e,square,el){
+  if(reviewIndex!==null) return;
+  const piece=game.get(square);
+  if(!piece || piece.color!==game.turn() || (aiOn && piece.color==="b")) return;
+
+  dragSource=square;
+  legalTargets=game.moves({square,verbose:true}).map(m=>m.to);
+  draw();
+
+  dragClone=el.cloneNode(true);
+  dragClone.style.position="fixed";
+  dragClone.style.pointerEvents="none";
+  dragClone.style.zIndex=1000;
+  dragClone.style.fontSize="48px";
+  document.body.appendChild(dragClone);
+  moveClone(e);
+  document.onmousemove=moveClone;
+  document.onmouseup=stopDrag;
+}
+
+function moveClone(e){ dragClone.style.left=(e.clientX-24)+"px"; dragClone.style.top=(e.clientY-24)+"px"; }
+
+function stopDrag(e){
+  document.onmousemove=null; document.onmouseup=null;
+  const square=getSquare(e.clientX,e.clientY);
+  if(dragClone) document.body.removeChild(dragClone);
+  dragClone=null;
+
+  const move=game.move({from:dragSource,to:square,promotion:'q'});
+  dragSource=null; legalTargets=[];
+  if(!move){ draw(); return; }
+
+  playMoveSound();
+  moveHistory.push(move);
+  learnMove(move);
+  draw();
+
+  if(aiOn && game.turn()==="b") setTimeout(aiMove,1000);
+}
+
+function getSquare(x,y){
+  const el=document.elementFromPoint(x,y);
+  if(!el) return null;
+  if(el.classList.contains("square")) return el.dataset.square;
+  if(el.parentElement?.classList.contains("square")) return el.parentElement.dataset.square;
+  return null;
+}
+
+// Buttons
+document.getElementById("toggleAI").onclick=()=>{ aiOn=!aiOn; document.getElementById("toggleAI").innerText="AI: "+(aiOn?"ON":"OFF"); if(aiOn && game.turn()==="b") setTimeout(aiMove,1000); };
+document.getElementById("newGame").onclick=newGame;
+document.getElementById("exportAI").onclick=exportAIData;
+document.getElementById("importBtn").onclick=()=>document.getElementById("importAI").click();
+document.getElementById("importAI").onchange=importAIData;
+
+// Game functions
+function newGame(){ saveGame(); game.reset(); moveHistory=[]; reviewIndex=null; draw(); infoEl.innerText=""; }
+function saveGame(){ if(moveHistory.length===0) return; const games=JSON.parse(localStorage.getItem("savedGames")||"[]"); games.push(moveHistory.map(m=>m.san)); localStorage.setItem("savedGames",JSON.stringify(games)); }
+
+// AI memory functions
+function learnMove(move){
+  const fen=game.fen();
+  if(!aiMemory[fen]) aiMemory[fen]={};
+  aiMemory[fen][move.san]=(aiMemory[fen][move.san]||0)+1;
+  localStorage.setItem("aiMemory",JSON.stringify(aiMemory));
+}
+
+function exportAIData(){
+  const blob=new Blob([JSON.stringify(aiMemory)],{type:"application/json"});
+  const a=document.createElement("a");
+  a.href=URL.createObjectURL(blob);
+  a.download="BSPaiData.BossSquirtle";
+  a.click();
+}
+
+function importAIData(e){
+  const file=e.target.files[0];
+  if(!file) return;
+  const reader=new FileReader();
+  reader.onload=function(evt){
+    try{ aiMemory=JSON.parse(evt.target.result); localStorage.setItem("aiMemory",JSON.stringify(aiMemory)); alert("AI Data Imported!"); }catch(err){alert("Failed to import AI data.");}
+  };
+  reader.readAsText(file);
+}
+
+// AI move
+function aiMove(){
+  const best=minimaxRoot(3,game,true);
+  game.move(best);
+  playMoveSound();
+  moveHistory.push(best);
+  learnMove(best);
+  draw();
+}
+
+// Minimax
+function minimaxRoot(depth,game,isMax){ const moves=game.moves({verbose:true}); let bestMove=null, bestValue=-9999; for(let m of moves){ game.move(m); const value=minimax(depth-1,game,-10000,10000,!isMax); game.undo(); if(value>=bestValue){ bestValue=value; bestMove=m; bestValue=value; } } return bestMove; }
+
+function minimax(depth,game,alpha,beta,isMax){ if(depth===0) return -evaluateBoard(game.board()); const moves=game.moves({verbose:true}); if(isMax){ let best=-9999; for(let m of moves){ game.move(m); best=Math.max(best,minimax(depth-1,game,alpha,beta,false)); game.undo(); alpha=Math.max(alpha,best); if(beta<=alpha) break; } return best; }else{ let best=9999; for(let m of moves){ game.move(m); best=Math.min(best,minimax(depth-1,game,alpha,beta,true)); game.undo(); beta=Math.min(beta,best); if(beta<=alpha) break; } return best; } }
+
+function evaluateBoard(board){ const values={p:100,n:320,b:330,r:500,q:900,k:20000}; let total=0; for(let row of board){ for(let piece of row){ if(piece){ const val=values[piece.type]; total+=piece.color==="w"?val:-val; } } } return total; }
+
+// Review mode with arrow keys
+document.addEventListener("keydown",e=>{
+  const games=JSON.parse(localStorage.getItem("savedGames")||"[]");
+  if(games.length===0) return;
+  const lastGame=games[games.length-1];
+  if(e.key==="ArrowLeft"){ if(reviewIndex===null) reviewIndex=moveHistory.length-1; else reviewIndex=Math.max(0,reviewIndex-1); reviewGame(reviewIndex,lastGame); }
+  if(e.key==="ArrowRight"){ if(reviewIndex===null) return; reviewIndex++; reviewGame(reviewIndex,lastGame); }
+});
+
+function reviewGame(index,lastGame){ const review=new Chess(); for(let i=0;i<=index && i<lastGame.length;i++) review.move(lastGame[i]); draw(review); infoEl.innerText="Review Move: "+(index+1)+" / "+lastGame.length; }
+
+// Render saved game list
+function renderGameList(){
+  const games=JSON.parse(localStorage.getItem("savedGames")||"[]");
+  gameListEl.innerHTML="";
+  games.forEach((g,i)=>{
+    const div=document.createElement("div");
+    div.className="savedGame";
+    div.innerHTML=`Game ${i+1} <button onclick="reviewSavedGame(${i})">Review</button>`;
+    gameListEl.appendChild(div);
+  });
+}
+
+function reviewSavedGame(index){
+  const games=JSON.parse(localStorage.getItem("savedGames")||"[]");
+  if(!games[index]) return;
+  reviewIndex=0;
+  moveHistory=games[index].map(san=>game.move({san,sloppy:true})||{san});
+  infoEl.innerText="Reviewing saved game "+(index+1);
+  draw();
+}
+
+// Update status
+function updateStatus(){ statusEl.innerText=game.in_checkmate()?"CHECKMATE":game.in_draw()?"DRAW":(game.turn()==="w"?"White":"Black")+" to move"; }
+
+draw();
+renderGameList();
+</script>
+</body>
+</html>
