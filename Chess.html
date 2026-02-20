@@ -126,6 +126,7 @@ function draw(positionGame=game){
         el.innerHTML=pieces[key];
         el.className="piece";
         el.onmousedown=(e)=>startDrag(e,name,el);
+        el.ontouchstart=(e)=>startTouch(e,name,el);
         sq.appendChild(el);
       }
       boardEl.appendChild(sq);
@@ -157,11 +158,48 @@ function startDrag(e,square,el){
   document.onmouseup=stopDrag;
 }
 
+function startTouch(e,square,el){
+  e.preventDefault();
+  if(reviewIndex!==null) return;
+  const piece=game.get(square);
+  if(!piece || piece.color!==game.turn() || (aiOn && piece.color==="b")) return;
+  dragSource=square;
+  legalTargets=game.moves({square,verbose:true}).map(m=>m.to);
+  draw();
+  dragClone=el.cloneNode(true);
+  dragClone.style.position="fixed";
+  dragClone.style.pointerEvents="none";
+  dragClone.style.zIndex=1000;
+  dragClone.style.width="48px";
+  dragClone.style.height="48px";
+  document.body.appendChild(dragClone);
+  moveCloneTouch(e);
+  document.ontouchmove=moveCloneTouch;
+  document.ontouchend=stopTouch;
+}
+
 function moveClone(e){ dragClone.style.left=(e.clientX-24)+"px"; dragClone.style.top=(e.clientY-24)+"px"; }
+function moveCloneTouch(e){
+  const t=e.touches[0];
+  if(!t) return;
+  dragClone.style.left=(t.clientX-24)+"px";
+  dragClone.style.top=(t.clientY-24)+"px";
+}
 
 function stopDrag(e){
   document.onmousemove=null; document.onmouseup=null;
   const square=getSquare(e.clientX,e.clientY);
+  finishMove(square);
+}
+
+function stopTouch(e){
+  document.ontouchmove=null; document.ontouchend=null;
+  const t=e.changedTouches[0];
+  const square=getSquare(t.clientX,t.clientY);
+  finishMove(square);
+}
+
+function finishMove(square){
   if(dragClone) document.body.removeChild(dragClone);
   dragClone=null;
   const move=game.move({from:dragSource,to:square,promotion:'q'});
@@ -200,13 +238,9 @@ document.getElementById("importAI").onchange=importAIData;
 const difficultyRange = document.getElementById('difficultyRange');
 const difficultyValue = document.getElementById('difficultyValue');
 
-difficultyRange.oninput = () => {
-  difficultyValue.textContent = difficultyRange.value;
-};
+difficultyRange.oninput = () => { difficultyValue.textContent = difficultyRange.value; };
 let aiDepth = parseInt(difficultyRange.value);
-difficultyRange.onchange = () => {
-  aiDepth = parseInt(difficultyRange.value);
-};
+difficultyRange.onchange = () => { aiDepth = parseInt(difficultyRange.value); };
 
 function newGame(){ saveGame(); game.reset(); moveHistory=[]; reviewIndex=null; draw(); infoEl.innerText=""; }
 function saveGame(){ if(moveHistory.length===0) return; const games=JSON.parse(localStorage.getItem("savedGames")||"[]"); const sanMoves=moveHistory.map(m => m ? m.san : null).filter(san => san !== null); games.push(sanMoves); localStorage.setItem("savedGames",JSON.stringify(games)); }
@@ -300,9 +334,7 @@ function evaluateBoard(board){
   return total;
 }
 
-function updateStatus(){ 
-  statusEl.innerText=game.in_checkmate()?"CHECKMATE":game.in_draw()?"DRAW":(game.turn()==="w"?"White":"Black")+" to move"; 
-}
+function updateStatus(){ statusEl.innerText=game.in_checkmate()?"CHECKMATE":game.in_draw()?"DRAW":(game.turn()==="w"?"White":"Black")+" to move"; }
 
 draw();
 renderGameList();
