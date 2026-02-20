@@ -1,10 +1,9 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
+<meta charset="UTF-8" />
 <title>Chess AI Project</title>
-<link rel="stylesheet" href="style.css">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<link rel="stylesheet" href="style.css" />
 <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
 </head>
 <body>
@@ -12,13 +11,22 @@
   <h1>Smart Chess AI</h1>
   <div class="controls">
     <button id="toggleAI">AI: OFF</button>
+    <button id="toggleAssist">Assistant: OFF</button>
     <button id="newGame">New Game</button>
     <button id="exportAI">Download AI Data</button>
     <input type="file" id="importAI" style="display:none;">
     <button id="importBtn">Import AI Data</button>
+    <div class="difficulty-slider-container">
+      <label for="difficultyRange">Difficulty:</label>
+      <input type="range" id="difficultyRange" min="1" max="10" value="3" />
+      <span id="difficultyValue">3</span>
+    </div>
   </div>
   <div class="game-area">
-    <div id="board"></div>
+    <div id="boardWrapper" style="position:relative;">
+      <div id="board"></div>
+      <canvas id="assistCanvas" width="384" height="384" style="position:absolute;left:0;top:0;pointer-events:none;"></canvas>
+    </div>
     <div class="sidebar">
       <div id="status"></div>
       <div id="info"></div>
@@ -27,23 +35,77 @@
     </div>
   </div>
 </div>
-
 <audio id="moveAudio" src="chess.mp3"></audio>
-
 <script>
 const game = new Chess();
-let aiOn=false, dragSource=null, dragClone=null, legalTargets=[], moveHistory=[], reviewIndex=null;
+let aiOn=false, reviewIndex=null, moveHistory=[];
+let assistOn=false, assistTimer=null;
 
 const boardEl=document.getElementById("board");
 const statusEl=document.getElementById("status");
 const infoEl=document.getElementById("info");
 const moveAudio=document.getElementById("moveAudio");
 const gameListEl=document.getElementById("gameList");
+const canvas=document.getElementById("assistCanvas");
+const ctx=canvas.getContext("2d");
 
 let aiMemory = JSON.parse(localStorage.getItem("aiMemory")||"{}");
 
-const pieces={p:"♟",r:"♜",n:"♞",b:"♝",q:"♛",k:"♚",
-              P:"♙",R:"♖",N:"♘",B:"♗",Q:"♕",K:"♔"};
+const pieces={
+  Wp: "<img src='Bin/Images/WhitePawn.png' width='48' height='48'/>",
+  Wr: "<img src='Bin/Images/WhiteRook.png' width='48' height='48'/>",
+  Wn: "<img src='Bin/Images/WhiteKnight.png' width='48' height='48'/>",
+  Wb: "<img src='Bin/Images/WhiteBishop.png' width='48' height='48'/>",
+  Wq: "<img src='Bin/Images/WhiteQueen.png' width='48' height='48'/>",
+  Wk: "<img src='Bin/Images/WhiteKing.png' width='48' height='48'/>",
+  bp: "<img src='Bin/Images/BlackPawn.png' width='48' height='48'/>",
+  br: "<img src='Bin/Images/BlackRook.png' width='48' height='48'/>",
+  bn: "<img src='Bin/Images/BlackKnight.png' width='48' height='48'/>",
+  bb: "<img src='Bin/Images/BlackBishop.png' width='48' height='48'/>",
+  bq: "<img src='Bin/Images/BlackQueen.png' width='48' height='48'/>",
+  bk: "<img src='Bin/Images/BlackKing.png' width='48' height='48'/>"
+};
+
+function clearArrow(){ ctx.clearRect(0,0,canvas.width,canvas.height); }
+
+function drawArrow(from,to){
+  clearArrow();
+  const f=getCoords(from);
+  const t=getCoords(to);
+  if(!f||!t) return;
+  ctx.strokeStyle="rgba(0,255,0,0.9)";
+  ctx.lineWidth=6;
+  ctx.beginPath();
+  ctx.moveTo(f.x,f.y);
+  ctx.lineTo(t.x,t.y);
+  ctx.stroke();
+  const angle=Math.atan2(t.y-f.y,t.x-f.x);
+  ctx.beginPath();
+  ctx.moveTo(t.x,t.y);
+  ctx.lineTo(t.x-15*Math.cos(angle-0.3),t.y-15*Math.sin(angle-0.3));
+  ctx.lineTo(t.x-15*Math.cos(angle+0.3),t.y-15*Math.sin(angle+0.3));
+  ctx.closePath();
+  ctx.fillStyle="rgba(0,255,0,0.9)";
+  ctx.fill();
+}
+
+function getCoords(square){
+  const el=[...boardEl.children].find(s=>s.dataset.square===square);
+  if(!el) return null;
+  const rect=el.getBoundingClientRect();
+  const boardRect=boardEl.getBoundingClientRect();
+  return {x:rect.left-boardRect.left+rect.width/2,y:rect.top-boardRect.top+rect.height/2};
+}
+
+function scheduleAssist(){
+  clearTimeout(assistTimer);
+  clearArrow();
+  if(!assistOn || game.turn()!=="w") return;
+  assistTimer=setTimeout(()=>{
+    const best=minimaxRoot(aiDepth,game,true);
+    if(best) drawArrow(best.from,best.to);
+  },5000);
+}
 
 function playMoveSound(){ moveAudio.currentTime=0; moveAudio.play().catch(()=>{}); }
 
@@ -57,14 +119,13 @@ function draw(positionGame=game){
       sq.className="square "+((r+c)%2?"dark":"light");
       sq.dataset.square=name;
       if(legalTargets.includes(name)) sq.classList.add("highlight");
-
       const piece=pos[r][c];
       if(piece){
         const el=document.createElement("div");
-        el.textContent=pieces[piece.color==="w"?piece.type.toUpperCase():piece.type];
+        const key = (piece.color==='w'?'W':'b') + piece.type;
+        el.innerHTML=pieces[key];
         el.className="piece";
         el.onmousedown=(e)=>startDrag(e,name,el);
-        el.ontouchstart=(e)=>startDrag(e,name,el);
         sq.appendChild(el);
       }
       boardEl.appendChild(sq);
@@ -72,64 +133,44 @@ function draw(positionGame=game){
   }
   updateStatus();
   renderGameList();
+  scheduleAssist();
 }
 
-function getEventPos(e){
-  if(e.touches && e.touches.length>0) return {x:e.touches[0].clientX,y:e.touches[0].clientY};
-  if(e.changedTouches && e.changedTouches.length>0) return {x:e.changedTouches[0].clientX,y:e.changedTouches[0].clientY};
-  return {x:e.clientX,y:e.clientY};
-}
+let dragSource=null, dragClone=null, legalTargets=[];
 
 function startDrag(e,square,el){
-  e.preventDefault();
   if(reviewIndex!==null) return;
   const piece=game.get(square);
   if(!piece || piece.color!==game.turn() || (aiOn && piece.color==="b")) return;
-
   dragSource=square;
   legalTargets=game.moves({square,verbose:true}).map(m=>m.to);
   draw();
-
   dragClone=el.cloneNode(true);
   dragClone.style.position="fixed";
   dragClone.style.pointerEvents="none";
   dragClone.style.zIndex=1000;
-  dragClone.style.fontSize="48px";
+  dragClone.style.width="48px";
+  dragClone.style.height="48px";
   document.body.appendChild(dragClone);
-
   moveClone(e);
   document.onmousemove=moveClone;
   document.onmouseup=stopDrag;
-  document.ontouchmove=moveClone;
-  document.ontouchend=stopDrag;
 }
 
-function moveClone(e){
-  if(!dragClone) return;
-  const p=getEventPos(e);
-  dragClone.style.left=(p.x-24)+"px";
-  dragClone.style.top=(p.y-24)+"px";
-}
+function moveClone(e){ dragClone.style.left=(e.clientX-24)+"px"; dragClone.style.top=(e.clientY-24)+"px"; }
 
 function stopDrag(e){
-  document.onmousemove=null;
-  document.onmouseup=null;
-  document.ontouchmove=null;
-  document.ontouchend=null;
-  const p=getEventPos(e);
-  const square=getSquare(p.x,p.y);
+  document.onmousemove=null; document.onmouseup=null;
+  const square=getSquare(e.clientX,e.clientY);
   if(dragClone) document.body.removeChild(dragClone);
   dragClone=null;
-
   const move=game.move({from:dragSource,to:square,promotion:'q'});
   dragSource=null; legalTargets=[];
   if(!move){ draw(); return; }
-
   playMoveSound();
   moveHistory.push(move);
   learnMove(move);
   draw();
-
   if(aiOn && game.turn()==="b") setTimeout(aiMove,1000);
 }
 
@@ -141,16 +182,37 @@ function getSquare(x,y){
   return null;
 }
 
-document.getElementById("toggleAI").onclick=()=>{ aiOn=!aiOn; document.getElementById("toggleAI").innerText="AI: "+(aiOn?"ON":"OFF"); if(aiOn && game.turn()==="b") setTimeout(aiMove,1000); };
+document.getElementById("toggleAI").onclick=()=>{
+  aiOn=!aiOn;
+  document.getElementById("toggleAI").innerText="AI: "+(aiOn?"ON":"OFF");
+  if(aiOn && game.turn()==="b") setTimeout(aiMove,1000);
+};
+document.getElementById("toggleAssist").onclick=()=>{
+  assistOn=!assistOn;
+  document.getElementById("toggleAssist").innerText="Assistant: "+(assistOn?"ON":"OFF");
+  scheduleAssist();
+};
 document.getElementById("newGame").onclick=newGame;
 document.getElementById("exportAI").onclick=exportAIData;
 document.getElementById("importBtn").onclick=()=>document.getElementById("importAI").click();
 document.getElementById("importAI").onchange=importAIData;
 
+const difficultyRange = document.getElementById('difficultyRange');
+const difficultyValue = document.getElementById('difficultyValue');
+
+difficultyRange.oninput = () => {
+  difficultyValue.textContent = difficultyRange.value;
+};
+let aiDepth = parseInt(difficultyRange.value);
+difficultyRange.onchange = () => {
+  aiDepth = parseInt(difficultyRange.value);
+};
+
 function newGame(){ saveGame(); game.reset(); moveHistory=[]; reviewIndex=null; draw(); infoEl.innerText=""; }
-function saveGame(){ if(moveHistory.length===0) return; const games=JSON.parse(localStorage.getItem("savedGames")||"[]"); games.push(moveHistory.map(m=>m.san)); localStorage.setItem("savedGames",JSON.stringify(games)); }
+function saveGame(){ if(moveHistory.length===0) return; const games=JSON.parse(localStorage.getItem("savedGames")||"[]"); const sanMoves=moveHistory.map(m => m ? m.san : null).filter(san => san !== null); games.push(sanMoves); localStorage.setItem("savedGames",JSON.stringify(games)); }
 
 function learnMove(move){
+  if(!move) return;
   const fen=game.fen();
   if(!aiMemory[fen]) aiMemory[fen]={};
   aiMemory[fen][move.san]=(aiMemory[fen][move.san]||0)+1;
@@ -158,7 +220,7 @@ function learnMove(move){
 }
 
 function exportAIData(){
-  const blob=new Blob([JSON.stringify(aiMemory)],{type:"application/json"});
+  const blob=new Blob([JSON.stringify(aiMemory)],[{type:"application/json"}]);
   const a=document.createElement("a");
   a.href=URL.createObjectURL(blob);
   a.download="BSPaiData.BossSquirtle";
@@ -176,7 +238,7 @@ function importAIData(e){
 }
 
 function aiMove(){
-  const best=minimaxRoot(3,game,true);
+  const best=minimaxRoot(aiDepth,game,true);
   game.move(best);
   playMoveSound();
   moveHistory.push(best);
@@ -184,43 +246,63 @@ function aiMove(){
   draw();
 }
 
-function minimaxRoot(depth,game,isMax){ const moves=game.moves({verbose:true}); let bestMove=null, bestValue=-9999; for(let m of moves){ game.move(m); const value=minimax(depth-1,game,-10000,10000,!isMax); game.undo(); if(value>=bestValue){ bestValue=value; bestMove=m; bestValue=value; } } return bestMove; }
-
-function minimax(depth,game,alpha,beta,isMax){ if(depth===0) return -evaluateBoard(game.board()); const moves=game.moves({verbose:true}); if(isMax){ let best=-9999; for(let m of moves){ game.move(m); best=Math.max(best,minimax(depth-1,game,alpha,beta,false)); game.undo(); alpha=Math.max(alpha,best); if(beta<=alpha) break; } return best; }else{ let best=9999; for(let m of moves){ game.move(m); best=Math.min(best,minimax(depth-1,game,alpha,beta,true)); game.undo(); beta=Math.min(beta,best); if(beta<=alpha) break; } return best; } }
-
-function evaluateBoard(board){ const values={p:100,n:320,b:330,r:500,q:900,k:20000}; let total=0; for(let row of board){ for(let piece of row){ if(piece){ const val=values[piece.type]; total+=piece.color==="w"?val:-val; } } } return total; }
-
-document.addEventListener("keydown",e=>{
-  const games=JSON.parse(localStorage.getItem("savedGames")||"[]");
-  if(games.length===0) return;
-  const lastGame=games[games.length-1];
-  if(e.key==="ArrowLeft"){ if(reviewIndex===null) reviewIndex=moveHistory.length-1; else reviewIndex=Math.max(0,reviewIndex-1); reviewGame(reviewIndex,lastGame); }
-  if(e.key==="ArrowRight"){ if(reviewIndex===null) return; reviewIndex++; reviewGame(reviewIndex,lastGame); }
-});
-
-function reviewGame(index,lastGame){ const review=new Chess(); for(let i=0;i<=index && i<lastGame.length;i++) review.move(lastGame[i]); draw(review); infoEl.innerText="Review Move: "+(index+1)+" / "+lastGame.length; }
-
-function renderGameList(){
-  const games=JSON.parse(localStorage.getItem("savedGames")||"[]");
-  gameListEl.innerHTML="";
-  games.forEach((g,i)=>{
-    const div=document.createElement("div");
-    div.className="savedGame";
-    div.innerHTML=`Game ${i+1} <button onclick="reviewSavedGame(${i})">Review</button>`;
-    gameListEl.appendChild(div);
-  });
+function minimaxRoot(depth,game,isMax){ 
+  const moves=game.moves({verbose:true});
+  let bestMove=null, bestValue=-9999;
+  for(let m of moves){
+    game.move(m);
+    const value=minimax(depth-1,game,-10000,10000,!isMax);
+    game.undo();
+    if(value>=bestValue){ bestValue=value; bestMove=m; }
+  }
+  return bestMove;
 }
 
-function reviewSavedGame(index){
-  const games=JSON.parse(localStorage.getItem("savedGames")||"[]");
-  if(!games[index]) return;
-  reviewIndex=0;
-  moveHistory=games[index].map(san=>game.move({san,sloppy:true})||{san});
-  infoEl.innerText="Reviewing saved game "+(index+1);
-  draw();
+function minimax(depth,game,alpha,beta,isMax){ 
+  if(depth===0) return -evaluateBoard(game.board());
+  const moves=game.moves({verbose:true});
+  if(isMax){
+    let maxEval=-9999;
+    for(let m of moves){
+      game.move(m);
+      const eval=minimax(depth-1,game,alpha,beta,false);
+      game.undo();
+      maxEval=Math.max(maxEval,eval);
+      alpha=Math.max(alpha,maxEval);
+      if(beta<=alpha) break;
+    }
+    return maxEval;
+  } else {
+    let minEval=9999;
+    for(let m of moves){
+      game.move(m);
+      const eval=minimax(depth-1,game,alpha,beta,true);
+      game.undo();
+      minEval=Math.min(minEval,eval);
+      beta=Math.min(beta,minEval);
+      if(beta<=alpha) break;
+    }
+    return minEval;
+  }
 }
 
-function updateStatus(){ statusEl.innerText=game.in_checkmate()?"CHECKMATE":game.in_draw()?"DRAW":(game.turn()==="w"?"White":"Black")+" to move"; }
+function evaluateBoard(board){
+  const values={p:100,n:320,b:330,r:500,q:900,k:20000};
+  let total=0;
+  for(let row of board){
+    for(let piece of row){
+      if(piece){
+        const val=values[piece.type];
+        total+=piece.color==="w"?val:-val;
+      }
+    }
+  }
+  return total;
+}
+
+function updateStatus(){ 
+  statusEl.innerText=game.in_checkmate()?"CHECKMATE":game.in_draw()?"DRAW":(game.turn()==="w"?"White":"Black")+" to move"; 
+}
 
 draw();
 renderGameList();
